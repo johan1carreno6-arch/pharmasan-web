@@ -73,8 +73,8 @@
   comparten OrbitControls; geometrías, materiales, estantería, postes, marcas y
   sillas usan caché o instancing. El render se limita a 30 fps; a partir de
   120 personas se reduce el pixel ratio y se desactivan sombras. No se animan
-  personas en esta fase. El rendimiento de 30 fps es el objetivo de diseño y
-  debe medirse en equipos de destino.
+  personas en esta fase. Los 30 fps son solo el límite superior configurado;
+  la velocidad alcanzada debe medirse y comunicarse, no darse por garantizada.
 - El diseño pasa a priorizar PC: a partir de 1280 px usa una cuadrícula de
   escena principal y columna lateral fija; el panel lateral puede desplazarse
   internamente cuando hay resultados extensos, sin desplazar la escena ni la
@@ -89,7 +89,7 @@
   desactivadas), además del umbral de carga de 120 personas; no hay sombras ni
   animación de pacientes. En Playwright se verificó el encuadre 1366×768 y
   390×844: sin solapamiento de escena/HUD y sin overflow horizontal. El
-  objetivo de 30 fps aún requiere medirlo en equipos reales.
+  límite configurado de 30 fps es un techo, no una garantía de velocidad.
 - Los eventos del motor incluyen `paciente_tipo` como dato aditivo para
   etiquetar y colorear las personas que esperan; la adición no participa en el
   calendario ni altera resultados o métricas. `src/escena/personas.js` deriva
@@ -127,3 +127,16 @@
   pacientes y cuatro visibles, se midieron 23–28 fps en cuatro muestras
   consecutivas. El objetivo de 30 fps no se sostuvo en ese navegador de prueba;
   se debe comunicar este límite y no presentarlo como rendimiento garantizado.
+- La actualización de la escena recorre solo las personas visibles y oculta
+  las que salen; los colores de instancias se transfieren solo si cambian y las
+  etiquetas se dibujan una vez por frame. El canvas de etiquetas usa el pixel
+  ratio real del renderizador. En el perfil de 131 pacientes, la preparación de
+  500 frames tomó 7,41 ms en total (0,0148 ms/frame); en navegador, antes y
+  después se midieron 22–23 y 21–22 fps estables, respectivamente. Bajar el
+  pixel ratio a 0,4 no mejoró la medición, por lo que se conserva 0,5. El
+  render sigue limitado a 30 fps como máximo, sin prometer alcanzarlos.
+- La descarga CSV genera el Blob correcto: se compararon sus 131 registros y
+  nueve columnas con la tabla, incluida la marca BOM UTF-8. `page.waitForEvent`
+  no recibió ningún evento de descarga en el navegador integrado, tampoco con
+  un enlace CSV de control. No se cambió la exportación que prepara el Blob;
+  falta repetir la recepción nativa en un navegador con descargas habilitadas.

@@ -603,6 +603,9 @@ export function crearLocal3D(contenedor) {
   const vectorProyeccion = new THREE.Vector3();
   const objetoTemporal = new THREE.Object3D();
   const coloresInstancia = new Map();
+  let indicesPorId = new Map();
+  let coloresPorMalla = [];
+  let personasVisiblesAnteriores = new Set();
   function colorInstancia(valor) {
     if (!coloresInstancia.has(valor)) {
       coloresInstancia.set(valor, new THREE.Color(valor));
@@ -615,6 +618,7 @@ export function crearLocal3D(contenedor) {
     posicion,
     altura,
     color,
+    coloresAsignados,
     anillo = false,
     offsetX = 0,
   ) {
@@ -627,7 +631,30 @@ export function crearLocal3D(contenedor) {
     objetoTemporal.scale.setScalar(1);
     objetoTemporal.updateMatrix();
     malla.setMatrixAt(indice, objetoTemporal.matrix);
-    malla.setColorAt(indice, colorInstancia(color));
+    if (coloresAsignados[indice] !== color) {
+      malla.setColorAt(indice, colorInstancia(color));
+      coloresAsignados[indice] = color;
+      return true;
+    }
+    return false;
+  }
+  function establecerTransformacion(
+    malla,
+    indice,
+    posicion,
+    altura,
+    anillo = false,
+    offsetX = 0,
+  ) {
+    objetoTemporal.position.set(
+      posicion[0] + offsetX,
+      altura,
+      posicion[2],
+    );
+    objetoTemporal.rotation.set(anillo ? -Math.PI / 2 : 0, 0, 0);
+    objetoTemporal.scale.setScalar(1);
+    objetoTemporal.updateMatrix();
+    malla.setMatrixAt(indice, objetoTemporal.matrix);
   }
   const materialesIndicadores = {
     libre: recursos.material(0x84a78b, { emissive: 0x18351f }),
@@ -691,6 +718,9 @@ export function crearLocal3D(contenedor) {
     }
     mallasPersonas = [];
     idsPersonas = [];
+    indicesPorId.clear();
+    coloresPorMalla = [];
+    personasVisiblesAnteriores.clear();
     frameActual = controlPersonas.reiniciar();
     contextoEtiquetas.clearRect(0, 0, etiquetas.width, etiquetas.height);
     for (const indicador of indicadores) {
@@ -703,6 +733,8 @@ export function crearLocal3D(contenedor) {
 
   function crearPersonas(eventos) {
     idsPersonas = [...new Set(eventos.map((evento) => evento.paciente_id))];
+    indicesPorId = new Map(idsPersonas.map((id, indice) => [id, indice]));
+    personasVisiblesAnteriores.clear();
     const capacidad = Math.max(1, idsPersonas.length, cantidadPersonas);
     if (idsPersonas.length === 0 && capacidad === 1) {
       return;
@@ -749,20 +781,21 @@ export function crearLocal3D(contenedor) {
       malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       malla.castShadow = !calidadReducida;
       const limite = malla === componentes[2] ? capacidad * 2 : capacidad;
-      const inicioOculto = malla === componentes[2] ? idsPersonas.length * 2 : idsPersonas.length;
-      for (let indice = inicioOculto; indice < limite; indice += 1) {
+      for (let indice = 0; indice < limite; indice += 1) {
         objetoTemporal.position.set(0, -100, 0);
         objetoTemporal.scale.setScalar(1);
         objetoTemporal.updateMatrix();
         malla.setMatrixAt(indice, objetoTemporal.matrix);
       }
+      malla.instanceMatrix.needsUpdate = true;
       escena.add(malla);
       mallasPersonas.push(malla);
     }
+    coloresPorMalla = componentes.map(() => []);
   }
 
   function dibujarEtiquetas(personas) {
-    const escala = Math.min(window.devicePixelRatio || 1, 1.5);
+    const escala = renderer.getPixelRatio();
     const ancho = Math.max(1, contenedor.clientWidth);
     const alto = Math.max(1, contenedor.clientHeight);
     if (etiquetas.width !== Math.round(ancho * escala)) {
@@ -799,63 +832,102 @@ export function crearLocal3D(contenedor) {
 
   function actualizarPersonas(tiempo) {
     frameActual = controlPersonas.actualizar(tiempo);
-    const personasPorId = new Map(
-      frameActual.personas.map((persona) => [persona.id, persona]),
-    );
-    for (let indice = 0; indice < idsPersonas.length; indice += 1) {
-      const persona = personasPorId.get(idsPersonas[indice]);
-      const indiceVentanilla = Number(String(persona?.ventanilla ?? "").replace(/\D/g, "")) - 1;
+    const personasVisibles = new Set();
+    const matricesActualizadas = new Set();
+    const coloresActualizados = new Set();
+    for (const persona of frameActual.personas) {
+      const indice = indicesPorId.get(persona.id);
+      if (indice === undefined) {
+        continue;
+      }
+      personasVisibles.add(persona.id);
+      const indiceVentanilla = Number(
+        String(persona?.ventanilla ?? "").replace(/\D/g, ""),
+      ) - 1;
       const indicadorVentanilla = indicadores[indiceVentanilla];
       const posicion =
         persona?.estado === "servicio" && indicadorVentanilla
           ? [indicadorVentanilla.x, 0, -0.75]
           : persona?.posicion ?? [0, -100, 0];
-      establecerInstancia(
+      const cuerpoActualizado = establecerInstancia(
         mallasPersonas[0],
         indice,
         posicion,
-        persona ? 0.92 : -100,
-        persona ? colorGrupo(persona.tipo) : 0xffffff,
+        0.92,
+        colorGrupo(persona.tipo),
+        coloresPorMalla[0],
       );
-      establecerInstancia(
+      matricesActualizadas.add(0);
+      if (cuerpoActualizado) coloresActualizados.add(0);
+      const cabezaActualizada = establecerInstancia(
         mallasPersonas[1],
         indice,
         posicion,
-        persona ? 1.55 : -100,
+        1.55,
         0xe5bd96,
+        coloresPorMalla[1],
       );
-      establecerInstancia(
+      matricesActualizadas.add(1);
+      if (cabezaActualizada) coloresActualizados.add(1);
+      const piernaIzquierdaActualizada = establecerInstancia(
         mallasPersonas[2],
         indice * 2,
         posicion,
-        persona ? 0.34 : -100,
+        0.34,
         0x34433d,
+        coloresPorMalla[2],
         false,
         -0.12,
       );
-      establecerInstancia(
+      const piernaDerechaActualizada = establecerInstancia(
         mallasPersonas[2],
         indice * 2 + 1,
         posicion,
-        persona ? 0.34 : -100,
+        0.34,
         0x34433d,
+        coloresPorMalla[2],
         false,
         0.12,
       );
-      establecerInstancia(
+      matricesActualizadas.add(2);
+      if (piernaIzquierdaActualizada || piernaDerechaActualizada) {
+        coloresActualizados.add(2);
+      }
+      const anilloActualizado = establecerInstancia(
         mallasPersonas[3],
         indice,
         posicion,
-        persona ? 0.06 : -100,
-        colorEspera(persona?.colorEspera ?? "verde"),
+        0.06,
+        colorEspera(persona.colorEspera ?? "verde"),
+        coloresPorMalla[3],
         true,
       );
+      matricesActualizadas.add(3);
+      if (anilloActualizado) coloresActualizados.add(3);
     }
-    for (const malla of mallasPersonas) {
-      malla.instanceMatrix.needsUpdate = true;
-      if (malla.instanceColor) {
-        malla.instanceColor.needsUpdate = true;
+    for (const id of personasVisiblesAnteriores) {
+      if (personasVisibles.has(id)) {
+        continue;
       }
+      const indice = indicesPorId.get(id);
+      if (indice === undefined) {
+        continue;
+      }
+      establecerTransformacion(mallasPersonas[0], indice, [0, 0, 0], -100);
+      establecerTransformacion(mallasPersonas[1], indice, [0, 0, 0], -100);
+      establecerTransformacion(mallasPersonas[2], indice * 2, [0, 0, 0], -100);
+      establecerTransformacion(mallasPersonas[2], indice * 2 + 1, [0, 0, 0], -100);
+      establecerTransformacion(mallasPersonas[3], indice, [0, 0, 0], -100, true);
+      for (let malla = 0; malla < mallasPersonas.length; malla += 1) {
+        matricesActualizadas.add(malla);
+      }
+    }
+    personasVisiblesAnteriores = personasVisibles;
+    for (const indice of matricesActualizadas) {
+      mallasPersonas[indice].instanceMatrix.needsUpdate = true;
+    }
+    for (const indice of coloresActualizados) {
+      mallasPersonas[indice].instanceColor.needsUpdate = true;
     }
     for (const ventanilla of frameActual.ventanillas) {
       const indice = Number(String(ventanilla.id).replace(/\D/g, "")) - 1;
@@ -871,7 +943,6 @@ export function crearLocal3D(contenedor) {
       indicador.barra.scale.x = progreso;
       indicador.barra.position.x = indicador.x - 0.81 + 0.81 * progreso;
     }
-    dibujarEtiquetas(frameActual.personas);
   }
 
   function cargarEventos(eventos) {

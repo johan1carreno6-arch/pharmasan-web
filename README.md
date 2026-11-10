@@ -101,9 +101,17 @@ ventanilla, inicio, tiempo de atención, espera y fin. El archivo usa UTF-8,
 separador `;` y formato decimal local.
 
 La aplicación mide los fps del render y los presenta en el estado de la escena.
-En la prueba de navegador a 1366×768, la selección de jornada completa con 131
-pacientes y un máximo simultáneo de cuatro registró 23–28 fps en cuatro
-muestras consecutivas; el objetivo de 30 fps no se sostuvo en ese navegador.
+En Playwright a 1366×768, con 131 pacientes y reproducción a 30×, antes de la
+optimización se midieron 22–23 fps; después, 21–22 fps en las seis muestras
+estables. La meta de 30 fps no se sostuvo y no se presenta como rendimiento
+garantizado. El perfilado de `perfil_rendimiento.js` midió 0,0148 ms/frame para
+la preparación de animación de los 131 pacientes.
+
+El navegador integrado no expuso el evento `download` de Playwright, incluso
+con una descarga CSV independiente. El Blob generado por la interfaz sí se
+contrastó con la tabla: encabezado más 131 filas, BOM UTF-8 y coincidencia de
+los nueve campos en todos los registros. La recepción del archivo en un
+navegador con descargas habilitadas queda pendiente.
 
 Ejecuta todas las pruebas con:
 

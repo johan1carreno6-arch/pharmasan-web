@@ -1,5 +1,37 @@
 # Progreso
 
+## 2026-11-09 — Verificación previa a la fase 6 y perfilado
+
+- **Hecho:** servido el sitio con `python -m http.server 8000` y probado en
+  Playwright a **1366×768** y **390×844**. Los cuatro preajustes completaron
+  simulación en ambos tamaños, sin errores de consola ni errores en la
+  interfaz. Duplicar/quitar ventanilla cambió la lista de **3→4→3**. «Volver
+  a los datos observados» restauró hora pico con **71 filas**, **7 esperas** y
+  **Wq = 0,155 min**. No se añadieron botones porque ya existían y funcionaban.
+- **Rendimiento:** `perfil_rendimiento.js`, 131 pacientes/262 eventos:
+  recorrido **17,03 ms**, 500 frames **7,41 ms** (**0,0148 ms/frame**) y
+  búsqueda binaria **0,17 ms** frente a **1,38 ms** lineal. Se cambiaron las
+  instancias para actualizar solo pacientes visibles y los colores solo cuando
+  cambian; las etiquetas se dibujan una vez por frame y su canvas usa la
+  resolución del renderizador. En el mismo recorrido a 30×, antes se midieron
+  **22–23 fps** (7 muestras) y después **21–22 fps** en las seis muestras
+  estables; no se sostiene la meta de 30 fps. Un perfil CPU de 5 s no mostró
+  una función JavaScript dominante (≈**85 %** de muestras ociosas). Probar
+  pixel ratio 0,4 no elevó los fps y se revirtió a 0,5.
+- **CSV:** Playwright no emitió `download` con `page.waitForEvent('download')`,
+  ni para una descarga CSV independiente de control; el entorno integrado no
+  produjo archivo. Sí se comprobó el Blob preparado por la aplicación: UTF-8
+  con BOM, **132 líneas** (encabezado + **131 pacientes**) y sus nueve campos
+  coinciden con las **131 filas** de la tabla. La recepción del archivo real
+  queda pendiente de un navegador que permita descargas.
+- **Archivos:** `src/escena/local3d.js`, `README.md`, `docs/PROGRESO.md` y
+  `docs/DECISIONES.md`.
+- **Pruebas:** `node --test`: **48 aprobadas, 0 fallidas**; `node --check` y
+  `git diff --check`: sin errores.
+- **Pendientes:** verificar el evento/archivo descargado en un navegador con
+  descargas habilitadas; el render no alcanza 30 fps en este entorno. Fases
+  6–9 siguen abiertas.
+
 ## Estado actual para transferencia
 
 - **Completas:** fases **0 a 5** (esqueleto e inicio de git; exportación de
@@ -11,12 +43,10 @@
 
 ## Pendientes antes de la fase 6
 
-- **Rendimiento:** con la jornada de **131 pacientes** se midieron entre **21 y
-  28 fps**, por debajo de la meta de **30 fps**. Falta optimizar la escena y
-  volver a medir antes de dar por cumplido el objetivo.
-- **CSV:** la interfaz preparó el archivo y mostró su nombre, pero el navegador
-  de prueba no expuso el evento de descarga; la recepción efectiva del archivo
-  queda sin verificar.
+- **Rendimiento:** tras optimizar la escena, con 131 pacientes se midieron
+  **21–22 fps** estables; no se afirma que alcance 30 fps.
+- **CSV:** contenido preparado y contrastado con la tabla, pero falta verificar
+  el evento y la recepción del archivo en un navegador con descargas habilitadas.
 - **Cambio de `src/engine/simulador.js` en la Entrega A:** se añadió el campo
   `paciente_tipo: paciente.tipo` al objeto de cada evento. Es un dato aditivo
   del registro para identificar el grupo en la escena; no altera el calendario
