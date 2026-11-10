@@ -624,11 +624,18 @@ export function simular(configuracion) {
         const libresCompatibles = libres.filter((ventanilla) => !ventanilla.paciente);
 
         if (libresCompatibles.length > 0) {
+          // Prioridad de la ventanilla: se prefieren las que tienen al grupo del
+          // paciente como primera opción de su lista "atiende" (como en Python).
+          const rango = (ventanilla) => ventanilla.atiende.indexOf(paciente.tipo);
+          const mejorRango = Math.min(...libresCompatibles.map(rango));
+          const candidatas = libresCompatibles.filter(
+            (ventanilla) => rango(ventanilla) === mejorRango,
+          );
           const indice =
             asignacion === "primera_libre"
               ? 0
-              : Math.floor(aleatorioAsignacion() * libresCompatibles.length);
-          iniciarServicio(libresCompatibles[indice], paciente, evento.tiempo);
+              : Math.floor(aleatorioAsignacion() * candidatas.length);
+          iniciarServicio(candidatas[indice], paciente, evento.tiempo);
         } else {
           filas[configuracion.colas === "compartida" ? "compartida" : paciente.tipo].push(
             paciente,
