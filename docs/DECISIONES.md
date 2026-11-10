@@ -1,5 +1,26 @@
 # Decisiones
 
+- Las mallas instanciadas de cuerpo, cabeza, piernas y anillo usan
+  `frustumCulled = false`: Three.js r160 conservaba una `boundingSphere`
+  calculada con todas las instancias ocultas en `y=-100`, y `setMatrixAt()` no
+  la invalida al mover pacientes. Se prefiere desactivar el recorte de estos
+  cuatro objetos pequeños a recalcular la esfera en cada actualización. La
+  prueba Playwright compara píxeles con el recorte activado/desactivado y
+  verifica que General y Preferencial aparecen en Observados y Laboratorio.
+- La optimización de matrices/colores de `bc61d78` no introdujo la esfera
+  obsoleta: su commit padre también trasladaba las instancias y dejaba las
+  inactivas en `y=-100` sin invalidar la esfera. Matrices, colores, índices,
+  materiales y orden de dibujo se verifican en navegador; la etiqueta y las
+  mallas ahora comparten la misma posición visual durante el servicio.
+- Three.js expone `BufferAttribute.needsUpdate` como setter; la inspección
+  automatizada comprueba el incremento de `instanceMatrix.version` y
+  `instanceColor.version`, junto con valores finitos y píxeles renderizados.
+  La prueba de navegador confirma además que el SHA-256 del módulo recibido
+  coincide con el archivo local, por lo que la caché no explica la regresión
+  reproducida.
+- El diagnóstico queda accesible solo con `?depurar-personas=1`; en ese modo
+  se conserva el búfer para capturas y se permite alternar el recorte en
+  pruebas. La ejecución normal no activa esa instrumentación.
 - La aplicación se entrega como archivos estáticos y módulos ES nativos, sin
   framework ni compilación.
 - Three.js se fija en r160 y se conserva en `vendor/three/`; la ejecución no

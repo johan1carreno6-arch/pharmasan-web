@@ -1,5 +1,43 @@
 # Progreso
 
+## 2026-11-10 — Corrige el recorte de personas en la escena 3D
+
+- **Causa confirmada:** Three.js r160 calculaba la `boundingSphere` de las
+  mallas instanciadas cuando todas las personas estaban ocultas en `y=-100`.
+  `setMatrixAt()` no invalida esa esfera; al avanzar, `frustumCulled` seguía
+  activo y recortaba los cuerpos, cabezas, piernas y anillos ya trasladados.
+  Se desactivó el recorte por objeto para esas cuatro mallas y se unificó la
+  posición visual del cuerpo y su etiqueta durante el servicio.
+- **Comparación histórica:** la misma inicialización y falta de invalidación
+  aparecen en `bc61d78^`; ese commit optimizó las escrituras de matrices y
+  colores, pero no introdujo la esfera obsoleta. `count`, índices, matrices,
+  colores y materiales se mantuvieron válidos. La respuesta de red de
+  `local3d.js` en la prueba local coincide por SHA-256 con el archivo fuente.
+- **Prueba visual:** Playwright comparó capturas con el recorte activado y
+  desactivado, y leyó los píxeles en la posición proyectada de cada paciente.
+  En Chromium con Intel Iris Xe aparecieron **344 píxeles General y 343
+  Preferencial**; no hubo errores de consola. En Chromium/SwiftShader, a
+  **1366×768**, Observados mostró **338 General y 357 Preferencial**; Laboratorio,
+  **328 y 338 General y 357 Preferencial**. A **390×844**, Observados mostró
+  **247, 259 y 258 General y 277 Preferencial**; Laboratorio, **257 General y
+  276 Preferencial**.
+  Las cuatro mallas tuvieron matrices y colores finitos, cuenta coherente y
+  `frustumCulled=false`; tres reinicios por tamaño y el cambio Laboratorio ↔
+  Observados terminaron sin errores.
+- **Rendimiento medido:** con 71 pacientes en Intel Iris Xe, la escena dio
+  **22–23 fps**, frente a los **21–22 fps** medidos antes. En SwiftShader dio
+  **7 fps** con recorte desactivado y **6–7 fps** al reactivarlo; el navegador
+  por software es más lento y no representa el rendimiento con GPU.
+- **Pruebas:** `node --test`: **63 aprobadas, 0 fallidas**. La prueba Playwright
+  cubre ambos tamaños, modos, colores de grupo, estado de mallas, píxeles,
+  hash del módulo servido, reinicios y cambio de modo.
+- **Pendiente:** la URL publicada no se pudo comprobar porque la solicitud
+  conserva el marcador `[pon aquí: enlace publicado / local]`; se verificó la
+  aplicación servida desde el repositorio local.
+- **Archivos:** `src/escena/local3d.js`, `tests/escena-browser.test.js`,
+  `package.json`, `package-lock.json`, `.github/workflows/pages.yml`,
+  `docs/PROGRESO.md` y `docs/DECISIONES.md`.
+
 ## 2026-11-10 — Fase 9: despliegue en GitHub Pages
 
 - **Hecho:** se reemplazó el marcador del workflow por publicación en cada

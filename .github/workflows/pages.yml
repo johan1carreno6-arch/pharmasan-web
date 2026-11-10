@@ -24,6 +24,10 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 20
+      - name: Instalar dependencias de pruebas
+        run: npm ci
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install chromium
       - name: Ejecutar pruebas
         run: node --test
 
