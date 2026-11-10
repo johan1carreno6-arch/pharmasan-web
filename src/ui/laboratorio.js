@@ -1679,10 +1679,33 @@ export function iniciarLaboratorio({
     panelComparar.hidden = !comparar;
     pestanaAjustar.setAttribute("aria-selected", String(!comparar));
     pestanaComparar.setAttribute("aria-selected", String(comparar));
+    pestanaAjustar.tabIndex = comparar ? -1 : 0;
+    pestanaComparar.tabIndex = comparar ? 0 : -1;
   }
 
   pestanaAjustar.addEventListener("click", () => cambiarPestana(false));
   pestanaComparar.addEventListener("click", () => cambiarPestana(true));
+  for (const [indice, pestana] of [
+    pestanaAjustar,
+    pestanaComparar,
+  ].entries()) {
+    pestana.addEventListener("keydown", (evento) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(evento.key)) {
+        return;
+      }
+      evento.preventDefault();
+      const destino =
+        evento.key === "Home"
+          ? 0
+          : evento.key === "End"
+            ? 1
+            : (indice + 1) % 2;
+      const pestanaDestino = [pestanaAjustar, pestanaComparar][destino];
+      cambiarPestana(destino === 1);
+      pestanaDestino.focus();
+    });
+  }
+  cambiarPestana(false);
 
   function renderizarListaEscenarios() {
     listaEscenarios.replaceChildren();

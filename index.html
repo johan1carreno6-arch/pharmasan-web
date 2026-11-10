@@ -11,6 +11,15 @@
       <header class="encabezado">
         <p class="etiqueta">Droguería Pharmasan · Bochalema</p>
         <h1>Simulación de atención</h1>
+        <nav class="acciones-aplicacion" aria-label="Ayuda de la aplicación">
+          <button id="abrir-recorrido" class="boton-secundario" type="button">
+            Ver recorrido
+          </button>
+          <button id="abrir-acerca" class="boton-secundario" type="button">
+            Acerca de
+          </button>
+        </nav>
+        <p id="aviso-aplicacion" class="aviso-aplicacion" role="alert" hidden></p>
       </header>
 
       <section class="panel panel-escena" aria-labelledby="titulo-escena">
@@ -24,6 +33,23 @@
           <span class="marca-esquematica">
             Representación esquemática, no a escala
           </span>
+          <div class="acciones-escena" role="group" aria-label="Opciones de visualización">
+            <button
+              id="alternar-panel-lateral"
+              type="button"
+              aria-controls="barra-lateral"
+              aria-expanded="true"
+            >
+              Ocultar panel lateral
+            </button>
+            <button
+              id="alternar-presentacion"
+              type="button"
+              aria-pressed="false"
+            >
+              Modo presentación
+            </button>
+          </div>
         </div>
         <div class="controles-vista" role="group" aria-label="Vistas de la maqueta">
           <button type="button" data-vista="cenital" aria-keyshortcuts="1">Cenital <kbd>1</kbd></button>
@@ -42,7 +68,7 @@
         </p>
       </section>
 
-      <aside class="barra-lateral" aria-label="Controles y resultados">
+      <aside id="barra-lateral" class="barra-lateral" aria-label="Controles y resultados">
         <section class="panel panel-hud" aria-labelledby="titulo-hud">
           <h2 id="titulo-hud">Estado de reproducción</h2>
           <dl class="hud-esencial">
@@ -510,6 +536,45 @@
         </section>
       </aside>
     </main>
+    <dialog id="dialogo-ayuda" class="dialogo-ayuda" aria-labelledby="titulo-dialogo-ayuda">
+      <div class="dialogo-cabecera">
+        <h2 id="titulo-dialogo-ayuda">Recorrido</h2>
+        <button id="cerrar-dialogo-ayuda" class="boton-secundario" type="button">
+          Cerrar
+        </button>
+      </div>
+      <section id="contenido-recorrido" aria-live="polite">
+        <p id="numero-paso-recorrido" class="etiqueta"></p>
+        <h3 id="titulo-paso-recorrido"></h3>
+        <p id="texto-paso-recorrido"></p>
+        <div class="acciones-dialogo">
+          <button id="paso-anterior-recorrido" class="boton-secundario" type="button">
+            Anterior
+          </button>
+          <button id="saltar-recorrido" class="boton-secundario" type="button">
+            Saltar recorrido
+          </button>
+          <button id="siguiente-recorrido" type="button">
+            Siguiente
+          </button>
+        </div>
+      </section>
+      <section id="contenido-acerca" hidden>
+        <h3>Acerca de la simulación</h3>
+        <dl class="datos-acerca">
+          <div><dt>Fuente de datos</dt><dd id="acerca-fuente">—</dd></div>
+          <div><dt>Fecha de exportación</dt><dd id="acerca-fecha">—</dd></div>
+          <div><dt>Versión del código exportado</dt><dd id="acerca-version">—</dd></div>
+        </dl>
+        <p>Representación esquemática, no a escala.</p>
+        <h3>Atajos de teclado</h3>
+        <ul>
+          <li>Espacio: reproducir o pausar.</li>
+          <li>Flechas izquierda y derecha: saltar entre instantes.</li>
+          <li>1, 2 y 3: vistas cenital, isométrica y frontal.</li>
+        </ul>
+      </section>
+    </dialog>
     <script type="module" src="src/ui/app.js"></script>
   </body>
 </html>

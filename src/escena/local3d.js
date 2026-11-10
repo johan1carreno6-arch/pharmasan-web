@@ -994,6 +994,8 @@ export function crearLocal3D(contenedor) {
               fps: Math.round(fpsMedidos),
               cantidadPersonas,
               personasVisibles: frameActual.personas.length,
+              geometriasRenderer: renderer.info.memory.geometries,
+              texturasRenderer: renderer.info.memory.textures,
             },
           }),
         );

@@ -13,6 +13,25 @@
   la última fase.
 - El archivo `.github/workflows/pages.yml` se mantiene como marcador sin
   configuración hasta la fase de despliegue.
+- La interfaz mantiene un tema claro de alto contraste: los pares de texto y
+  fondo principales/sutiles, botones y errores se midieron sobre **4,5:1**;
+  el foco usa contorno verde oscuro. Los botones no bajan de **44 px**. El
+  panel lateral se puede plegar; el modo presentación conserva escena completa
+  y un HUD flotante. Las pestañas del laboratorio usan flechas y tabulación
+  roving.
+- El recorrido inicial se recuerda mediante `localStorage` dentro de
+  `try/catch`, pero siempre se puede volver a abrir. «Acerca de» consume
+  fuente, fecha y versión desde `data/observados.json.meta`; el campo
+  `fuente_datos` identifica `pharmasan-sim`, coherente con el proceso de
+  exportación documentado. Sin WebGL se desactivan solo las vistas 3D y siguen
+  disponibles las herramientas de datos. Un error de carga de observaciones
+  se anuncia en español sin dejar una pantalla vacía.
+- Al reiniciar la animación o cargar eventos de otro modo se retiran y
+  disponen las geometrías y materiales dinámicos de pacientes; los recursos
+  estáticos de la escena viven hasta `dispose()` del renderer. En 20 corridas
+  alternadas el conteo del renderer se mantuvo en **37 geometrías y 10
+  texturas**. El heap observado fluctúa con la recolección automática, por lo
+  que se reportan lecturas, no una cota fija.
 - `data/observados.json` se genera en `pharmasan-sim` desde el CSV procesado y
   las tablas de análisis/escenarios existentes; la web consume ese artefacto
   sin mantener una copia manual de las cifras.

@@ -2948,6 +2948,7 @@
     ]
   },
   "meta": {
+    "fuente_datos": "pharmasan-sim",
     "fecha_exportacion": "2026-11-09T17:43:30-05:00",
     "version_codigo": "d0c286e",
     "semilla_usada": 20261101

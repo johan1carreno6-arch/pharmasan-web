@@ -40,6 +40,8 @@ const estadoComparacion = document.querySelector("#estado-comparacion");
 const lineaTiempo = document.querySelector("#linea-tiempo");
 const contenedorEscena = document.querySelector("#escena-local");
 const estadoEscena = document.querySelector("#estado-escena");
+const dialogoAyuda = document.querySelector("#dialogo-ayuda");
+const avisoAplicacion = document.querySelector("#aviso-aplicacion");
 const hud = {
   reloj: document.querySelector("#hud-reloj"),
   llegados: document.querySelector("#hud-llegados"),
@@ -67,6 +69,114 @@ const formatoMinutos = new Intl.NumberFormat("es-CO", {
 let comparacionParaCsv;
 let seleccionParaCsv;
 let datosParaCsv;
+
+const pasosRecorrido = [
+  {
+    titulo: "Modo A: datos observados",
+    texto:
+      "Selecciona un día y un tramo para reproducir los registros reales. " +
+      "La tabla compara los resultados con las cifras verificadas.",
+  },
+  {
+    titulo: "Modo B: laboratorio",
+    texto:
+      "Ajusta ventanillas, llegadas y atención. Simula el escenario y ejecuta " +
+      "réplicas para ver promedios e intervalos de confianza.",
+  },
+  {
+    titulo: "Reproducción y atajos",
+    texto:
+      "Usa los controles de reproducción o el teclado: espacio reproduce o " +
+      "pausa, las flechas saltan entre instantes y 1/2/3 cambia la vista.",
+  },
+  {
+    titulo: "Resultados y configuraciones",
+    texto:
+      "Consulta tablas, descarga los datos CSV, guarda configuraciones y " +
+      "compara hasta cuatro escenarios.",
+  },
+];
+let pasoRecorrido = 0;
+let contenidoDialogo = "recorrido";
+
+function marcarRecorridoVisto() {
+  try {
+    window.localStorage.setItem("pharmasan-recorrido-visto", "si");
+  } catch {
+    return;
+  }
+}
+
+function actualizarPasoRecorrido() {
+  const paso = pasosRecorrido[pasoRecorrido];
+  document.querySelector("#numero-paso-recorrido").textContent =
+    `Paso ${pasoRecorrido + 1} de ${pasosRecorrido.length}`;
+  document.querySelector("#titulo-paso-recorrido").textContent = paso.titulo;
+  document.querySelector("#texto-paso-recorrido").textContent = paso.texto;
+  document.querySelector("#paso-anterior-recorrido").disabled = pasoRecorrido === 0;
+  document.querySelector("#siguiente-recorrido").textContent =
+    pasoRecorrido === pasosRecorrido.length - 1 ? "Terminar" : "Siguiente";
+}
+
+function mostrarDialogo(contenido) {
+  contenidoDialogo = contenido;
+  document.querySelector("#contenido-recorrido").hidden =
+    contenido !== "recorrido";
+  document.querySelector("#contenido-acerca").hidden = contenido !== "acerca";
+  document.querySelector("#titulo-dialogo-ayuda").textContent =
+    contenido === "recorrido" ? "Recorrido de la aplicación" : "Acerca de";
+  if (contenido === "recorrido") actualizarPasoRecorrido();
+  if (!dialogoAyuda.open) dialogoAyuda.showModal();
+}
+
+function finalizarRecorrido() {
+  marcarRecorridoVisto();
+  if (dialogoAyuda.open) dialogoAyuda.close();
+}
+
+document.querySelector("#abrir-recorrido").addEventListener("click", () => {
+  pasoRecorrido = 0;
+  mostrarDialogo("recorrido");
+});
+document.querySelector("#abrir-acerca").addEventListener("click", () => {
+  mostrarDialogo("acerca");
+});
+document.querySelector("#cerrar-dialogo-ayuda").addEventListener("click", () => {
+  if (contenidoDialogo === "recorrido") marcarRecorridoVisto();
+  dialogoAyuda.close();
+});
+document.querySelector("#paso-anterior-recorrido").addEventListener("click", () => {
+  pasoRecorrido = Math.max(0, pasoRecorrido - 1);
+  actualizarPasoRecorrido();
+});
+document.querySelector("#siguiente-recorrido").addEventListener("click", () => {
+  if (pasoRecorrido === pasosRecorrido.length - 1) {
+    finalizarRecorrido();
+  } else {
+    pasoRecorrido += 1;
+    actualizarPasoRecorrido();
+  }
+});
+document.querySelector("#saltar-recorrido").addEventListener("click", finalizarRecorrido);
+dialogoAyuda.addEventListener("close", () => {
+  if (contenidoDialogo === "recorrido") marcarRecorridoVisto();
+});
+document.querySelector("#alternar-panel-lateral").addEventListener("click", (evento) => {
+  const plegado = document.body.classList.toggle("panel-lateral-plegado");
+  evento.currentTarget.setAttribute("aria-expanded", String(!plegado));
+  evento.currentTarget.textContent = plegado
+    ? "Mostrar panel lateral"
+    : "Ocultar panel lateral";
+});
+document
+  .querySelector("#alternar-presentacion")
+  .addEventListener("click", (evento) => {
+    const activa = document.body.classList.toggle("modo-presentacion");
+    evento.currentTarget.setAttribute("aria-pressed", String(activa));
+    evento.currentTarget.textContent = activa
+      ? "Salir de presentación"
+      : "Modo presentación";
+  });
 
 function mostrarError(elemento, error, boton) {
   elemento.textContent = `No fue posible ejecutar la operación: ${error.message}`;
@@ -589,6 +699,10 @@ try {
       : "Maqueta lista: 60 espacios de fila, 12 sillas y controles orbitales.";
   });
   contenedorEscena.addEventListener("rendimientoescena", (evento) => {
+    contenedorEscena.dataset.geometriasRenderer =
+      String(evento.detail.geometriasRenderer);
+    contenedorEscena.dataset.texturasRenderer =
+      String(evento.detail.texturasRenderer);
     if (evento.detail.cantidadPersonas > 0) {
       estadoEscena.textContent =
         `Escena: ${evento.detail.fps} fps medidos con carga de ` +
@@ -624,7 +738,7 @@ try {
       const vista = { "1": "cenital", "2": "isometrica", "3": "frontal" }[
         evento.key
       ];
-      escenaLocal.establecerVista(vista);
+      escenaLocal?.establecerVista(vista);
       document
         .querySelectorAll("[data-vista]")
         .forEach((boton) =>
@@ -636,7 +750,22 @@ try {
     }
   });
 } catch (error) {
-  estadoEscena.textContent = `No fue posible cargar la maqueta 3D local: ${error.message}`;
+  const detalle = error.message.replace(/[.\s]+$/, "");
+  document.body.classList.add("sin-webgl");
+  contenedorEscena.replaceChildren(
+    Object.assign(document.createElement("p"), {
+      className: "aviso-webgl",
+      textContent:
+        "La visualización 3D no está disponible en este navegador. " +
+        "Puedes seguir usando los controles, resultados y tablas.",
+    }),
+  );
+  document.querySelectorAll("[data-vista]").forEach((boton) => {
+    boton.disabled = true;
+  });
+  estadoEscena.textContent =
+    `Visualización 3D no disponible: ${detalle}. ` +
+    "Los controles, resultados y tablas siguen disponibles.";
   estadoEscena.className = "estado estado-error";
 }
 
@@ -779,6 +908,15 @@ try {
     "Datos y referencia Python cargados. La simulación remuestrea por separado las interllegadas de cada grupo y día.";
   estadoReplay.textContent =
     "Elige un día y un tramo para reproducir los registros observados.";
+  document.querySelector("#acerca-fuente").textContent =
+    datosObservados.meta.fuente_datos ??
+    "No especificada en los metadatos exportados.";
+  document.querySelector("#acerca-fecha").textContent =
+    datosObservados.meta.fecha_exportacion ??
+    "No especificada en los metadatos exportados.";
+  document.querySelector("#acerca-version").textContent =
+    datosObservados.meta.version_codigo ??
+    "No especificada en los metadatos exportados.";
   iniciarLaboratorio({
     formulario: formularioLaboratorio,
     datos: datosObservados,
@@ -811,7 +949,27 @@ try {
     },
   });
 } catch (error) {
-  mostrarError(estado, error, botonBase);
-  estadoReplay.textContent = error.message;
+  const detalle = error.message.replace(/[.\s]+$/, "");
+  const mensaje =
+    `No se pudieron cargar o validar los datos observados: ${detalle}. ` +
+    "Revisa data/observados.json y recarga la página.";
+  avisoAplicacion.textContent =
+    `${mensaje} El caso base y la reproducción observada permanecerán deshabilitados.`;
+  avisoAplicacion.hidden = false;
+  estado.textContent = mensaje;
+  estado.className = "estado estado-error";
+  estadoReplay.textContent =
+    "No se puede iniciar la reproducción porque faltan datos observados válidos.";
   estadoReplay.className = "estado estado-error";
+}
+
+let recorridoVisto = false;
+try {
+  recorridoVisto =
+    window.localStorage.getItem("pharmasan-recorrido-visto") === "si";
+} catch {
+  recorridoVisto = false;
+}
+if (!recorridoVisto) {
+  window.setTimeout(() => mostrarDialogo("recorrido"), 0);
 }

@@ -1,5 +1,49 @@
 # Progreso
 
+## 2026-11-10 — Fase 8: pulido, accesibilidad y gestión de recursos
+
+- **Hecho:** se ajustó la jerarquía tipográfica y el foco visible, se agregó
+  plegado del panel lateral y modo presentación con escena a pantalla completa
+  y HUD superpuesto. Se incorporaron recorrido inicial de cuatro pasos,
+  reapertura desde la interfaz, «Acerca de» con metadatos de
+  `data/observados.json`, atajos documentados y avisos para WebGL/datos no
+  disponibles. La lectura y escritura de `localStorage` están protegidas.
+  Reiniciar y cambiar de corrida liberan geometrías y materiales de pacientes;
+  el render informa sus conteos de geometrías y texturas.
+- **Diseño y accesibilidad:** antes, los botones de vista medían **40 px** y
+  el foco verde claro tenía contraste **1,90:1**. Ahora todos los botones
+  visibles miden al menos **44 px** y el foco oscuro alcanza **8,31:1**.
+  Ratios calculados: texto principal **12,27:1**, texto secundario **6,62:1**,
+  botón primario **7,17:1**, secundario **8,60:1** y error **7,51:1**; todos
+  superan el mínimo AA de **4,5:1** para texto normal. Las entradas visibles
+  tienen etiqueta. Las pestañas admiten flechas y conservan un único punto
+  de tabulación.
+- **Responsive:** a **1366×768**, **1920×1080**, **768×1024** y **390×844** no
+  hubo scroll horizontal. La escena midió respectivamente **936×523**,
+  **1490×834**, **383×674** y **338×380 px** en modo normal. El panel plegado
+  amplió la escena a **1316 px**; presentación ocupó **1366×768** y, en móvil,
+  **390×844**, sin overflow.
+- **Memoria y rendimiento:** tras **20 corridas alternadas** (10 observadas,
+  10 de laboratorio), el renderer se mantuvo en **37 geometrías y 10
+  texturas**. El heap JS observado pasó de **11.038.793** a **12.994.800
+  bytes**, con muestras intermedias no monótonas de **12.410.324** a
+  **15.486.205 bytes**; no hubo crecimiento sostenido de recursos GPU. Con
+  71 pacientes se midieron **21 fps** (muestras de corrida, **20–23 fps**);
+  no se promete 30 fps.
+- **Fallos comprobados:** al forzar WebGL no disponible, se mostró el aviso y
+  funcionaron la reproducción de **71 pacientes** y la simulación de
+  laboratorio de **22 pacientes**. Una respuesta HTTP **404** para el JSON
+  dejó la página visible, indicó el error y mantuvo deshabilitados los modos
+  observados. El recorrido se pudo omitir y volver a abrir; tampoco falló con
+  `localStorage` bloqueado.
+- **Archivos:** `index.html`, `data/observados.json`, `src/ui/app.js`,
+  `src/ui/estilos.css`, `src/ui/laboratorio.js`, `src/escena/local3d.js`,
+  `docs/PLAN.md`, `docs/PROGRESO.md` y `docs/DECISIONES.md`.
+- **Pruebas:** `node --test`: **60 aprobadas, 0 fallidas**; `node --check` y
+  `git diff --check`: sin errores.
+- **Pendientes:** completar fase 9 y repetir la validación en equipo/navegador
+  real antes de la entrega.
+
 ## 2026-11-10 — Fase 7: comparación de escenarios en Web Worker
 
 - **Hecho:** se añadió la pestaña Comparar para guardar hasta **4 escenarios

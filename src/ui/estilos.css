@@ -3,6 +3,7 @@
   font-family: system-ui, sans-serif;
   color: #18352b;
   background: #f3f7f4;
+  font-size: 16px;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -43,11 +44,37 @@ body {
 }
 
 .encabezado {
+  display: grid;
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
   grid-column: 1;
   grid-row: 1;
   align-self: center;
   padding-inline: 0.5rem;
+}
+
+.encabezado > .etiqueta,
+.encabezado > h1 {
+  grid-column: 1;
+}
+
+.encabezado > .etiqueta {
+  grid-row: 1;
+}
+
+.encabezado > h1 {
+  grid-row: 2;
+}
+
+.encabezado > .acciones-aplicacion {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin-top: 0;
+}
+
+.encabezado > .aviso-aplicacion {
+  grid-column: 1 / -1;
 }
 
 .etiqueta {
@@ -164,8 +191,9 @@ button:hover:enabled {
 button:focus-visible,
 select:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
-  outline: 3px solid #92c8a9;
+  outline: 3px solid #005a3c;
   outline-offset: 2px;
 }
 
@@ -175,7 +203,7 @@ button:disabled {
 }
 
 .controles-vista button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0.35rem 0.6rem;
   background: #e8efea;
   color: #214d39;
@@ -262,6 +290,53 @@ kbd {
   overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.acciones-aplicacion,
+.acciones-escena,
+.acciones-dialogo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.acciones-aplicacion {
+  margin-top: 0.55rem;
+}
+
+.acciones-aplicacion button,
+.acciones-escena button {
+  min-height: 44px;
+  font-size: 0.82rem;
+}
+
+.acciones-escena {
+  margin-left: auto;
+}
+
+.aviso-aplicacion {
+  margin: 0.55rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #a32121;
+  border-radius: 0.55rem;
+  background: #fff1ef;
+  color: #781919;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.aviso-webgl {
+  display: grid;
+  min-height: 12rem;
+  margin: 0;
+  padding: 1.5rem;
+  align-content: center;
+  color: #781919;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .barra-lateral .panel {
@@ -615,6 +690,70 @@ summary {
   min-width: 0;
 }
 
+.dialogo-ayuda {
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: min(85dvh, 42rem);
+  padding: 1.2rem;
+  border: 1px solid #afc5b7;
+  border-radius: 0.85rem;
+  color: #18352b;
+  background: #fff;
+  box-shadow: 0 1rem 3rem rgb(24 53 43 / 22%);
+}
+
+.dialogo-ayuda::backdrop {
+  background: rgb(16 35 27 / 62%);
+}
+
+.dialogo-ayuda h2,
+.dialogo-ayuda h3 {
+  color: #18352b;
+}
+
+.dialogo-ayuda p,
+.dialogo-ayuda li {
+  color: #374e43;
+  line-height: 1.55;
+}
+
+.dialogo-cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dialogo-cabecera h2 {
+  margin-bottom: 0.8rem;
+}
+
+.acciones-dialogo {
+  justify-content: flex-end;
+  margin-top: 1.2rem;
+}
+
+.datos-acerca {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.7rem 0;
+}
+
+.datos-acerca > div {
+  padding: 0.6rem;
+  border-radius: 0.45rem;
+  background: #f3f7f4;
+}
+
+.datos-acerca dt {
+  color: #374e43;
+  font-weight: 700;
+}
+
+.datos-acerca dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
 .resultados-laboratorio .medidas {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -895,6 +1034,106 @@ td small {
   border: 0;
 }
 
+.panel-lateral-plegado .aplicacion {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.panel-lateral-plegado .encabezado,
+.panel-lateral-plegado .panel-escena {
+  grid-column: 1;
+}
+
+.panel-lateral-plegado .barra-lateral {
+  display: none;
+}
+
+.modo-presentacion .aplicacion {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.modo-presentacion .encabezado {
+  display: none;
+}
+
+.modo-presentacion .barra-lateral {
+  display: contents;
+}
+
+.modo-presentacion .barra-lateral > :not(.panel-hud) {
+  display: none;
+}
+
+.modo-presentacion .panel-escena {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.modo-presentacion .panel-hud {
+  position: fixed;
+  z-index: 4;
+  top: 1rem;
+  right: 1rem;
+  display: block;
+  width: min(23rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  border: 1px solid #819a8a;
+  box-shadow: 0 0.5rem 1.8rem rgb(0 0 0 / 24%);
+}
+
+.modo-presentacion .marca-esquematica,
+.modo-presentacion .nota-resultados,
+.modo-presentacion .cabecera-escena > div:first-child,
+.modo-presentacion .controles-vista,
+.modo-presentacion #estado-escena {
+  display: none;
+}
+
+.modo-presentacion .cabecera-escena {
+  position: absolute;
+  z-index: 5;
+  top: 0.65rem;
+  left: 0.65rem;
+  pointer-events: none;
+}
+
+.modo-presentacion .acciones-escena {
+  pointer-events: auto;
+}
+
+.modo-presentacion .escena-local {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.modo-presentacion .acciones-escena {
+  margin-left: 0;
+}
+
+.modo-presentacion .panel-hud h2,
+.modo-presentacion .panel-hud .barra-tiempo,
+.modo-presentacion .panel-hud .controles-velocidad,
+.modo-presentacion .panel-hud .hud-detalles {
+  display: none;
+}
+
 @media (min-width: 1280px) {
   .barra-lateral {
     position: relative;
@@ -928,8 +1167,21 @@ td small {
   }
 
   .encabezado {
+    grid-template-columns: minmax(0, 1fr);
     order: 0;
     padding: 0.35rem 0.25rem;
+  }
+
+  .encabezado > .etiqueta,
+  .encabezado > h1,
+  .encabezado > .acciones-aplicacion,
+  .encabezado > .aviso-aplicacion {
+    grid-column: 1;
+  }
+
+  .encabezado > .acciones-aplicacion {
+    grid-row: auto;
+    margin-top: 0.45rem;
   }
 
   h1 {
@@ -1014,6 +1266,31 @@ td small {
 
   .carril-tiempo {
     min-width: 300px;
+  }
+}
+
+@media (max-width: 767px) {
+  .modo-presentacion .escena-local {
+    min-height: 0;
+    max-height: none;
+    flex: none;
+  }
+
+  .modo-presentacion .panel-hud {
+    top: auto;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    width: min(22rem, calc(100vw - 1rem));
+    max-height: 48dvh;
+    padding: 0.65rem;
+  }
+
+  .modo-presentacion .panel-hud .hud-esencial {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .modo-presentacion .panel-hud .hud-esencial > div:first-child {
+    grid-column: auto;
   }
 }
 

@@ -8,5 +8,5 @@
 - [x] 5. Añadir animación de pacientes y HUD (Entregas A y B completadas)
 - [x] 6. Crear el laboratorio (datos propios, réplicas y configuración compartible)
 - [x] 7. Implementar comparación de escenarios y ejecución en Web Worker
-- [ ] 8. Pulir la aplicación
+- [x] 8. Pulir la aplicación
 - [ ] 9. Desplegar en GitHub Pages
