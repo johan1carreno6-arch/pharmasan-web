@@ -158,3 +158,11 @@
   reconstruyen desde `data/observados.json` al cargar para no inflar el hash.
   La descarga mantiene JSON indentado para lectura. Un hash inválido informa
   el problema y deja activo el preajuste de datos observados.
+- La comparación de la escena confirmó que los conteos y atributos GPU de
+  cuerpo, cabeza, piernas y anillo eran válidos también antes de `bc61d78`;
+  ese commit no originó la ausencia visual. Se aumentó la escala low-poly
+  respecto a la maqueta esquemática, se apartaron las etiquetas de la cabeza
+  y se conserva la alineación horizontal del anillo con el cuerpo. Los
+  pacientes no proyectan sombras. En escritorio el pixel ratio máximo es
+  1,25 para mantener **21 fps** medidos con la jornada observada; en móvil
+  sigue limitado a 0,7. No se afirma que la escena alcance 30 fps.

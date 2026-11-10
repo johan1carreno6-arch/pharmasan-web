@@ -1,5 +1,29 @@
 # Progreso
 
+## 2026-11-09 — Corrección visual de pacientes en la escena 3D
+
+- **Hecho:** el fallo también se reproduce en `1633743`, anterior a
+  `bc61d78`; por tanto, la optimización de instancias no lo introdujo.
+  `count`, matrices y colores eran válidos. La causa era el tamaño aparente
+  de los cuerpos frente a la maqueta y el solapamiento de las cabezas con las
+  etiquetas. Se separaron y ampliaron las transformaciones de cuerpo, cabeza,
+  piernas y anillo; se elevaron las etiquetas. Se desactivaron sombras de
+  pacientes y se limitó el pixel ratio de escritorio a 1,25.
+- **Navegador:** reproducción observada con **71 pacientes** y **5 visibles**
+  en el fotograma validado; Playwright a **1366×768** y **390×844**, sin
+  errores de página ni desbordamiento horizontal. Las capturas muestran
+  pacientes del grupo General en verde y Preferencial/Adulto Mayor en naranja.
+  Rendimiento medido: **21 fps** en escritorio y **21 fps** en móvil, frente
+  a los **21–22 fps** medidos antes de la corrección. La meta de 30 fps no se
+  sostiene.
+- **Archivos:** `src/escena/instancias-personas.js`,
+  `src/escena/local3d.js`, `tests/escena.test.js`, `docs/PROGRESO.md` y
+  `docs/DECISIONES.md`.
+- **Pruebas:** `node --test tests/escena.test.js tests/personas.test.js`:
+  **7 aprobadas, 0 fallidas**; `node --check` y `git diff --check`: sin errores.
+- **Pendientes:** continuar con la fase 7 después de guardar esta corrección
+  en un commit separado.
+
 ## 2026-11-09 — Fase 6: laboratorio
 
 - **Hecho:** completados los faltantes del Prompt 6. Se añadió la importación

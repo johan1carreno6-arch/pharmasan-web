@@ -1,6 +1,10 @@
 import * as THREE from "../../vendor/three/three.module.js";
 import { OrbitControls } from "../../vendor/three/OrbitControls.js";
 import { crearCamaraEscena } from "./camara.js";
+import {
+  crearTransformacionesPersona,
+  establecerInstanciaPersona,
+} from "./instancias-personas.js";
 import { crearControlPersonas } from "./personas.js";
 
 const PALETA = {
@@ -561,7 +565,7 @@ export function crearLocal3D(contenedor) {
     powerPreference: "high-performance",
   });
   renderer.setPixelRatio(
-    Math.min(window.devicePixelRatio || 1, mediaMovil.matches ? 0.7 : 1.5),
+    Math.min(window.devicePixelRatio || 1, mediaMovil.matches ? 0.7 : 1.25),
   );
   renderer.shadowMap.enabled = !mediaMovil.matches;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -611,32 +615,6 @@ export function crearLocal3D(contenedor) {
       coloresInstancia.set(valor, new THREE.Color(valor));
     }
     return coloresInstancia.get(valor);
-  }
-  function establecerInstancia(
-    malla,
-    indice,
-    posicion,
-    altura,
-    color,
-    coloresAsignados,
-    anillo = false,
-    offsetX = 0,
-  ) {
-    objetoTemporal.position.set(
-      posicion[0] + offsetX,
-      altura,
-      posicion[2],
-    );
-    objetoTemporal.rotation.set(anillo ? -Math.PI / 2 : 0, 0, 0);
-    objetoTemporal.scale.setScalar(1);
-    objetoTemporal.updateMatrix();
-    malla.setMatrixAt(indice, objetoTemporal.matrix);
-    if (coloresAsignados[indice] !== color) {
-      malla.setColorAt(indice, colorInstancia(color));
-      coloresAsignados[indice] = color;
-      return true;
-    }
-    return false;
   }
   function establecerTransformacion(
     malla,
@@ -779,7 +757,7 @@ export function crearLocal3D(contenedor) {
     ];
     for (const malla of componentes) {
       malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      malla.castShadow = !calidadReducida;
+      malla.castShadow = false;
       const limite = malla === componentes[2] ? capacidad * 2 : capacidad;
       for (let indice = 0; indice < limite; indice += 1) {
         objetoTemporal.position.set(0, -100, 0);
@@ -811,7 +789,7 @@ export function crearLocal3D(contenedor) {
     contextoEtiquetas.textBaseline = "middle";
     for (const persona of personas) {
       vectorProyeccion
-        .set(persona.posicion[0], persona.posicion[1] + 1.9, persona.posicion[2])
+        .set(persona.posicion[0], persona.posicion[1] + 2.45, persona.posicion[2])
         .project(camara.camara);
       const x = ((vectorProyeccion.x + 1) * ancho) / 2;
       const y = ((1 - vectorProyeccion.y) * alto) / 2;
@@ -849,58 +827,59 @@ export function crearLocal3D(contenedor) {
         persona?.estado === "servicio" && indicadorVentanilla
           ? [indicadorVentanilla.x, 0, -0.75]
           : persona?.posicion ?? [0, -100, 0];
-      const cuerpoActualizado = establecerInstancia(
+      const transformaciones = crearTransformacionesPersona(posicion);
+      const cuerpoActualizado = establecerInstanciaPersona(
+        objetoTemporal,
         mallasPersonas[0],
         indice,
-        posicion,
-        0.92,
+        transformaciones.cuerpo,
         colorGrupo(persona.tipo),
         coloresPorMalla[0],
+        colorInstancia,
       );
       matricesActualizadas.add(0);
       if (cuerpoActualizado) coloresActualizados.add(0);
-      const cabezaActualizada = establecerInstancia(
+      const cabezaActualizada = establecerInstanciaPersona(
+        objetoTemporal,
         mallasPersonas[1],
         indice,
-        posicion,
-        1.55,
+        transformaciones.cabeza,
         0xe5bd96,
         coloresPorMalla[1],
+        colorInstancia,
       );
       matricesActualizadas.add(1);
       if (cabezaActualizada) coloresActualizados.add(1);
-      const piernaIzquierdaActualizada = establecerInstancia(
+      const piernaIzquierdaActualizada = establecerInstanciaPersona(
+        objetoTemporal,
         mallasPersonas[2],
         indice * 2,
-        posicion,
-        0.34,
+        transformaciones.piernas[0],
         0x34433d,
         coloresPorMalla[2],
-        false,
-        -0.12,
+        colorInstancia,
       );
-      const piernaDerechaActualizada = establecerInstancia(
+      const piernaDerechaActualizada = establecerInstanciaPersona(
+        objetoTemporal,
         mallasPersonas[2],
         indice * 2 + 1,
-        posicion,
-        0.34,
+        transformaciones.piernas[1],
         0x34433d,
         coloresPorMalla[2],
-        false,
-        0.12,
+        colorInstancia,
       );
       matricesActualizadas.add(2);
       if (piernaIzquierdaActualizada || piernaDerechaActualizada) {
         coloresActualizados.add(2);
       }
-      const anilloActualizado = establecerInstancia(
+      const anilloActualizado = establecerInstanciaPersona(
+        objetoTemporal,
         mallasPersonas[3],
         indice,
-        posicion,
-        0.06,
+        transformaciones.anillo,
         colorEspera(persona.colorEspera ?? "verde"),
         coloresPorMalla[3],
-        true,
+        colorInstancia,
       );
       matricesActualizadas.add(3);
       if (anilloActualizado) coloresActualizados.add(3);
@@ -977,13 +956,13 @@ export function crearLocal3D(contenedor) {
     renderer.setPixelRatio(
       Math.min(
         window.devicePixelRatio || 1,
-        mediaMovil.matches ? 0.7 : calidadReducida ? 0.5 : 1.5,
+      mediaMovil.matches ? 0.7 : calidadReducida ? 0.5 : 1.25,
       ),
     );
     renderer.shadowMap.enabled = !calidadReducida;
     renderer.shadowMap.needsUpdate = true;
     for (const malla of mallasPersonas) {
-      malla.castShadow = !calidadReducida;
+      malla.castShadow = false;
     }
     camara.redimensionar();
     contenedor.dataset.calidad = calidadReducida
