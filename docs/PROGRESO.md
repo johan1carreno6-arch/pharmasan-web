@@ -1,5 +1,40 @@
 # Progreso
 
+## 2026-11-10 — Fase 7: comparación de escenarios en Web Worker
+
+- **Hecho:** se añadió la pestaña Comparar para guardar hasta **4 escenarios
+  nombrados**, ejecutar réplicas con semillas comunes, mostrar una tabla con
+  medias e IC 95 % de Wq, Lq, rho por ventanilla y esperas sobre el máximo,
+  indicar el criterio y graficar Wq con intervalos. El barrido opcional cubre
+  demanda ×1,0–×2,0 en pasos de 0,1 e informa el primer factor que incumple.
+  La corrida de réplicas del laboratorio y la comparación usan el mismo Web
+  Worker de módulo, con progreso cada **10 réplicas** y cancelación sin
+  resultados parciales.
+- **Navegador:** a 1366×768 y 390×844 no hubo desbordamiento horizontal ni
+  errores de consola/página. Una comparación con **2 escenarios × 3 réplicas**
+  llegó a **66/66**, mostró el factor de progreso numérico ×1,1, **2 filas**,
+  gráfico y resultados del barrido. La corrida de **1.000 réplicas** completó
+  mientras la interfaz aceptó cambiar la vista de cámara (el progreso avanzó
+  de **70 a 180** durante la interacción); cancelar otra corrida preservó el
+  resultado previo y no mostró resultados parciales.
+- **Rendimiento del worker:** en el escenario observado, **100 réplicas: 0,208
+  s; 1.000 réplicas: 0,792 s**. Una réplica también completó y mostró medias
+  sin estimar un IC. Bajo la ruta con prefijo `/pharmasan-web/`, la app cargó y
+  el módulo `src/engine/replicas-worker.js` respondió **HTTP 200**; la corrida
+  terminó sin errores.
+- **Enlaces:** la configuración observada generó **1.397 caracteres**. Un CSV
+  válido de **100 filas** generó **3.674 caracteres** y mostró el aviso por
+  superar 2.000, recomendando «Descargar configuración (JSON)».
+- **Archivos:** `index.html`, `src/ui/estilos.css`,
+  `src/ui/laboratorio.js`, `src/engine/replicas.js`,
+  `src/engine/replicas-worker.js`, `src/engine/replicas-worker-client.js`,
+  `tests/replicas_worker.test.js`, `docs/PLAN.md`, `docs/PROGRESO.md` y
+  `docs/DECISIONES.md`.
+- **Pruebas:** `node --test`: **60 aprobadas, 0 fallidas**; incluye paridad
+  worker/síncrono, réplica única sin IC, semillas comunes, barrido y
+  cancelación. `node --check` y `git diff --check`: sin errores.
+- **Pendientes:** fases 8 (pulido) y 9 (despliegue en GitHub Pages).
+
 ## 2026-11-09 — Corrección visual de pacientes en la escena 3D
 
 - **Hecho:** el fallo también se reproduce en `1633743`, anterior a

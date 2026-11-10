@@ -1,9 +1,6 @@
 import { calcularMetricas } from "../engine/metricas.js";
 import { crearFlujoAleatorio } from "../engine/prng.js";
-import {
-  correrReplicasAsincronas,
-  valorCriticoT,
-} from "../engine/replicas.js";
+import { crearClienteReplicasWorker } from "../engine/replicas-worker-client.js";
 import { simular } from "../engine/simulador.js";
 import { normalEstandar } from "../engine/distribuciones.js";
 import { crearConfiguracionBase } from "./observados.js";
@@ -909,7 +906,12 @@ function crearLlegadasLaboratorio(entrada, datos) {
   if (entrada.modoLlegadas === "datos_propios") {
     return {
       modo: "csv",
-      pacientes: parsearCsvDatosPropios(entrada.contenidoDatosPropios),
+      pacientes: parsearCsvDatosPropios(entrada.contenidoDatosPropios).map(
+        (paciente) => ({
+          ...paciente,
+          llegada: paciente.llegada / entrada.factorDemanda,
+        }),
+      ),
     };
   }
   if (entrada.modoLlegadas === "poisson") {
@@ -1450,6 +1452,152 @@ function mostrarMetricas(contenedor, metricas, rhoEstimado, advertencias) {
   }
 }
 
+function textoResumen(medida, porcentaje = false, yaPorcentaje = false) {
+  const formatear = (valor) =>
+    formatoLocal.format(porcentaje ? 100 * valor : valor);
+  const sufijo = porcentaje || yaPorcentaje ? " %" : "";
+  const media = `${formatear(medida.media)}${sufijo}`;
+  if (!medida.ic95) return `${media} · IC 95 % no estimable`;
+  return (
+    `${media} · [${formatear(medida.ic95.inferior)}; ` +
+    `${formatear(medida.ic95.superior)}]${sufijo}`
+  );
+}
+
+function nodoSvg(etiqueta, atributos = {}) {
+  const elemento = document.createElementNS("http://www.w3.org/2000/svg", etiqueta);
+  for (const [nombre, valor] of Object.entries(atributos)) {
+    if (nombre === "texto") elemento.textContent = valor;
+    else if (nombre === "clase") elemento.setAttribute("class", valor);
+    else elemento.setAttribute(nombre, valor);
+  }
+  return elemento;
+}
+
+function renderizarTablaEscenarios(contenedor, escenarios) {
+  const tabla = nodo("table");
+  tabla.append(nodo("caption", { texto: "Medias e intervalos de confianza del 95 %" }));
+  const cabeza = nodo("thead");
+  const filaCabeza = nodo("tr");
+  for (const texto of [
+    "Escenario",
+    "Wq (min)",
+    "Lq",
+    "rho por ventanilla",
+    "Espera > máximo",
+    "Criterio",
+  ]) {
+    filaCabeza.append(nodo("th", { scope: "col", texto }));
+  }
+  cabeza.append(filaCabeza);
+  const cuerpo = nodo("tbody");
+  for (const escenario of escenarios) {
+    const fila = nodo("tr");
+    fila.append(
+      nodo("th", { scope: "row", texto: escenario.nombre }),
+      nodo("td", { texto: textoResumen(escenario.resumen.Wq) }),
+      nodo("td", { texto: textoResumen(escenario.resumen.Lq) }),
+    );
+    const rho = nodo("td");
+    for (const [id, medida] of Object.entries(
+      escenario.resumen.rho_por_ventanilla,
+    )) {
+      rho.append(
+        nodo("span", {
+          clase: "rho-ventanilla",
+          texto: `V${id}: ${textoResumen(medida, true)}`,
+        }),
+      );
+    }
+    fila.append(
+      rho,
+      nodo("td", {
+        texto: textoResumen(
+          escenario.resumen.porcentaje_espera_mayor_tolerable,
+          false,
+          true,
+        ),
+      }),
+      nodo("td", {
+        clase: escenario.cumple ? "criterio-cumple" : "criterio-incumple",
+        texto: escenario.cumple ? "Cumple" : "No cumple",
+      }),
+    );
+    cuerpo.append(fila);
+  }
+  tabla.append(cabeza, cuerpo);
+  contenedor.replaceChildren(tabla);
+}
+
+function crearGraficoWq(escenarios) {
+  const ancho = 760;
+  const alto = Math.max(100, 54 + escenarios.length * 44);
+  const svg = nodoSvg("svg", {
+    viewBox: `0 0 ${ancho} ${alto}`,
+    role: "img",
+    "aria-labelledby": "titulo-grafico-wq descripcion-grafico-wq",
+  });
+  svg.append(
+    nodoSvg("title", {
+      id: "titulo-grafico-wq",
+      texto: "Media de Wq e intervalo de confianza del 95 %",
+    }),
+    nodoSvg("desc", {
+      id: "descripcion-grafico-wq",
+      texto: "Una barra por escenario y una línea horizontal para su intervalo.",
+    }),
+  );
+  const maximo = Math.max(
+    0.1,
+    ...escenarios.map((escenario) =>
+      Math.max(
+        escenario.resumen.Wq.media,
+        escenario.resumen.Wq.ic95?.superior ?? escenario.resumen.Wq.media,
+      ),
+    ),
+  );
+  const x = (valor) => 180 + (430 * Math.max(0, valor)) / maximo;
+  const linea = (x1, y1, x2, y2, clase) => {
+    const elemento = nodoSvg("line", { x1, y1, x2, y2, clase });
+    svg.append(elemento);
+  };
+  linea(180, 34, 180, alto - 16, "eje-grafico");
+  for (const [indice, escenario] of escenarios.entries()) {
+    const y = 52 + indice * 44;
+    const medida = escenario.resumen.Wq;
+    const intervalo = medida.ic95 ?? {
+      inferior: medida.media,
+      superior: medida.media,
+    };
+    svg.append(
+      nodoSvg("text", {
+        x: "8",
+        y: String(y + 4),
+        clase: "etiqueta-grafico",
+        texto: escenario.nombre,
+      }),
+      nodoSvg("rect", {
+        x: "180",
+        y: String(y - 8),
+        width: String(Math.max(0, x(medida.media) - 180)),
+        height: "16",
+        rx: "4",
+        clase: escenario.cumple ? "barra-grafico cumple" : "barra-grafico",
+      }),
+      nodoSvg("text", {
+        x: "625",
+        y: String(y + 4),
+        clase: "valor-grafico",
+        texto: `${formatoLocal.format(medida.media)} min`,
+      }),
+    );
+    linea(x(intervalo.inferior), y, x(intervalo.superior), y, "intervalo-grafico");
+    linea(x(intervalo.inferior), y - 5, x(intervalo.inferior), y + 5, "intervalo-grafico");
+    linea(x(intervalo.superior), y - 5, x(intervalo.superior), y + 5, "intervalo-grafico");
+  }
+  return svg;
+}
+
 export function iniciarLaboratorio({
   formulario,
   datos,
@@ -1471,6 +1619,28 @@ export function iniciarLaboratorio({
   const botonObservados = formulario.querySelector("#volver-observados");
   const resultados = formulario.querySelector("#resultados-laboratorio");
   const advertencias = formulario.querySelector("#advertencias-laboratorio");
+  const panelLaboratorio = formulario.closest(".panel-laboratorio");
+  const pestanaAjustar = panelLaboratorio.querySelector("#pestana-ajustar");
+  const pestanaComparar = panelLaboratorio.querySelector("#pestana-comparar");
+  const panelComparar = panelLaboratorio.querySelector(
+    "#panel-laboratorio-comparar",
+  );
+  const listaEscenarios = panelComparar.querySelector("#lista-escenarios");
+  const botonGuardarEscenario = panelComparar.querySelector("#guardar-escenario");
+  const botonComparar = panelComparar.querySelector("#correr-comparacion");
+  const botonCancelarComparacion = panelComparar.querySelector(
+    "#cancelar-comparacion",
+  );
+  const progresoComparacion = panelComparar.querySelector("#progreso-comparacion");
+  const estadoComparacion = panelComparar.querySelector(
+    "#estado-comparacion-laboratorio",
+  );
+  const salidaComparacion = panelComparar.querySelector(
+    "#resultados-comparacion-laboratorio",
+  );
+  let escenariosGuardados = [];
+  let clienteWorker;
+  let trabajoActivo;
   let inicial = crearPreajusteLaboratorio(
     "Actual (2 generales + 1 preferencial)",
     datos,
@@ -1498,6 +1668,207 @@ export function iniciarLaboratorio({
       ? "estado estado-correcto"
       : "estado estado-error";
   }
+
+  function obtenerClienteWorker() {
+    clienteWorker ??= crearClienteReplicasWorker();
+    return clienteWorker;
+  }
+
+  function cambiarPestana(comparar) {
+    formulario.hidden = comparar;
+    panelComparar.hidden = !comparar;
+    pestanaAjustar.setAttribute("aria-selected", String(!comparar));
+    pestanaComparar.setAttribute("aria-selected", String(comparar));
+  }
+
+  pestanaAjustar.addEventListener("click", () => cambiarPestana(false));
+  pestanaComparar.addEventListener("click", () => cambiarPestana(true));
+
+  function renderizarListaEscenarios() {
+    listaEscenarios.replaceChildren();
+    for (const [indice, escenario] of escenariosGuardados.entries()) {
+      const elemento = nodo("li");
+      elemento.append(
+        nodo("span", {
+          texto: `${escenario.nombre} · ${escenario.configuracion.ventanillas.length} ventanillas · demanda ×${formatoLocal.format(escenario.configuracion.factorDemanda)}`,
+        }),
+      );
+      elemento.append(
+        nodo("button", {
+          type: "button",
+          "data-quitar-escenario": String(indice),
+          "aria-label": `Quitar escenario ${escenario.nombre}`,
+          texto: "Quitar",
+        }),
+      );
+      listaEscenarios.append(elemento);
+    }
+    botonGuardarEscenario.disabled = escenariosGuardados.length >= 4;
+    botonComparar.disabled = escenariosGuardados.length === 0;
+  }
+
+  renderizarListaEscenarios();
+
+  panelComparar.addEventListener("click", async (evento) => {
+    const boton = evento.target.closest("button");
+    if (!boton) return;
+    if (boton.dataset.quitarEscenario !== undefined) {
+      escenariosGuardados.splice(Number(boton.dataset.quitarEscenario), 1);
+      renderizarListaEscenarios();
+      return;
+    }
+    if (boton.id === "guardar-escenario") {
+      const estadoGuardar = estadoComparacion;
+      try {
+        if (escenariosGuardados.length >= 4) {
+          throw new RangeError("Solo se pueden guardar cuatro escenarios.");
+        }
+        const nombre = panelComparar
+          .querySelector("#nombre-escenario")
+          .value.trim();
+        if (!nombre) throw new RangeError("Escribe un nombre para el escenario.");
+        if (
+          escenariosGuardados.some(
+            (escenario) => escenario.nombre.toLocaleLowerCase() === nombre.toLocaleLowerCase(),
+          )
+        ) {
+          throw new RangeError("Ya existe un escenario con ese nombre.");
+        }
+        const entrada = leerEntrada(formulario, conteosMemoria);
+        const validacion = validarEntradaLaboratorio(entrada, datos);
+        if (validacion.errores.length) {
+          mostrarErrores(formulario, validacion.errores);
+          throw new RangeError(validacion.errores[0].mensaje);
+        }
+        crearConfiguracionLaboratorio(entrada, datos);
+        escenariosGuardados.push({
+          nombre,
+          configuracion: JSON.parse(JSON.stringify(entrada)),
+        });
+        renderizarListaEscenarios();
+        panelComparar.querySelector("#nombre-escenario").value = "";
+        estadoGuardar.textContent = `Escenario «${nombre}» guardado.`;
+        estadoGuardar.className = "estado estado-correcto";
+      } catch (error) {
+        estadoGuardar.textContent = `No fue posible guardar el escenario: ${error.message}`;
+        estadoGuardar.className = "estado estado-error";
+      }
+      return;
+    }
+    if (boton.id === "cancelar-comparacion") {
+      trabajoActivo?.cancelar();
+      return;
+    }
+    if (boton.id !== "correr-comparacion") return;
+
+    botonComparar.disabled = true;
+    botonGuardarEscenario.disabled = true;
+    formulario.querySelector("#correr-replicas").disabled = true;
+    botonCancelarComparacion.hidden = false;
+    progresoComparacion.hidden = false;
+    progresoComparacion.value = 0;
+    estadoComparacion.textContent = "Preparando escenarios con una semilla común…";
+    estadoComparacion.className = "estado";
+    try {
+      const entradaActiva = leerEntrada(formulario, conteosMemoria);
+      const validacion = validarEntradaLaboratorio(entradaActiva, datos);
+      if (validacion.errores.length) {
+        mostrarErrores(formulario, validacion.errores);
+        throw new RangeError(validacion.errores[0].mensaje);
+      }
+      const cantidad = entradaActiva.cantidadReplicas;
+      const semillaComun = entradaActiva.semilla;
+      const escenarios = escenariosGuardados.map((guardado) => {
+        const entrada = {
+          ...guardado.configuracion,
+          semilla: semillaComun,
+          cantidadReplicas: cantidad,
+        };
+        const armado = crearConfiguracionLaboratorio(entrada, datos);
+        return {
+          nombre: guardado.nombre,
+          configuracion: armado.configuracion,
+          criterio: armado.criterio,
+        };
+      });
+      const barridoDemanda = panelComparar.querySelector(
+        "#activar-barrido-demanda",
+      ).checked
+        ? escenarios
+        : [];
+      trabajoActivo = obtenerClienteWorker().ejecutar(
+        {
+          tipo: "comparar",
+          escenarios,
+          barridoDemanda,
+          cantidad,
+          semillaComun,
+        },
+        {
+          alProgreso: (completadas, total, detalle) => {
+            progresoComparacion.value = (100 * completadas) / total;
+            const fase =
+              detalle.tarea === "barrido"
+                ? `, demanda ×${formatoLocal.format(detalle.factor)}`
+                : "";
+            estadoComparacion.textContent =
+              `Progreso: ${completadas} de ${total} réplicas · ` +
+              `${detalle.nombre}${fase}.`;
+          },
+        },
+      );
+      const resultado = await trabajoActivo.resultado;
+      renderizarTablaEscenarios(
+        panelComparar.querySelector("#tabla-escenarios"),
+        resultado.escenarios,
+      );
+      panelComparar
+        .querySelector("#grafico-escenarios")
+        .replaceChildren(crearGraficoWq(resultado.escenarios));
+      const salidaBarrido = panelComparar.querySelector("#resultados-barrido");
+      salidaBarrido.replaceChildren();
+      if (resultado.barridos.length) {
+        const lista = nodo("ul", { clase: "lista-escenarios" });
+        for (const barrido of resultado.barridos) {
+          lista.append(
+            nodo("li", {
+              texto:
+                barrido.primerFactorIncumple === null
+                  ? `${barrido.nombre}: cumple de ×1,0 a ×2,0.`
+                  : `${barrido.nombre}: deja de cumplir desde ×${formatoLocal.format(barrido.primerFactorIncumple)}.`,
+            }),
+          );
+        }
+        salidaBarrido.append(
+          nodo("h3", { texto: "Barrido de demanda" }),
+          lista,
+        );
+      }
+      salidaComparacion.hidden = false;
+      estadoComparacion.textContent =
+        `${resultado.escenarios.length} escenarios, ${cantidad} réplicas cada uno; ` +
+        `semillas comunes desde ${semillaComun}.`;
+      estadoComparacion.className = "estado estado-correcto";
+    } catch (error) {
+      if (error.name === "ReplicasCanceladasError") {
+        estadoComparacion.textContent =
+          "Comparación cancelada; no se aplicaron resultados parciales.";
+        estadoComparacion.className = "estado";
+        progresoComparacion.hidden = true;
+        progresoComparacion.value = 0;
+      } else {
+        estadoComparacion.textContent =
+          `No fue posible comparar los escenarios: ${error.message}`;
+        estadoComparacion.className = "estado estado-error";
+      }
+    } finally {
+      trabajoActivo = undefined;
+      botonComparar.disabled = escenariosGuardados.length === 0;
+      botonGuardarEscenario.disabled = escenariosGuardados.length >= 4;
+      formulario.querySelector("#correr-replicas").disabled = false;
+      botonCancelarComparacion.hidden = true;
+    }
+  });
 
   function refrescarValidacion() {
     const validacion = validarEntradaLaboratorio(
@@ -1609,8 +1980,13 @@ export function iniciarLaboratorio({
           auxiliar.remove();
           if (!copiado) throw new Error("el navegador no permitió copiar el enlace");
         }
-        estadoConfiguracion.textContent = "Enlace con esta configuración copiado.";
-        estadoConfiguracion.className = "estado estado-correcto";
+        const enlaceLargo = url.length > 2000;
+        estadoConfiguracion.textContent = enlaceLargo
+          ? `Enlace copiado: ${url.length} caracteres. Supera los 2.000; usa «Descargar configuración (JSON)» como alternativa.`
+          : `Enlace con esta configuración copiado (${url.length} caracteres).`;
+        estadoConfiguracion.className = enlaceLargo
+          ? "estado estado-advertencia"
+          : "estado estado-correcto";
       } catch (error) {
         estadoConfiguracion.textContent = `No fue posible copiar el enlace: ${error.message}`;
         estadoConfiguracion.className = "estado estado-error";
@@ -1622,7 +1998,11 @@ export function iniciarLaboratorio({
       const estadoReplicas = formulario.querySelector("#estado-replicas");
       const barraProgreso = formulario.querySelector("#progreso-replicas");
       const salidaReplicas = formulario.querySelector("#resultados-replicas");
+      const botonCancelar = formulario.querySelector("#cancelar-replicas");
       botonReplicas.disabled = true;
+      formulario.querySelector("#simular-laboratorio").disabled = true;
+      panelComparar.querySelector("#correr-comparacion").disabled = true;
+      botonCancelar.hidden = false;
       barraProgreso.hidden = false;
       barraProgreso.value = 0;
       estadoReplicas.textContent = "Ejecutando réplicas…";
@@ -1635,54 +2015,47 @@ export function iniciarLaboratorio({
           maximo_tolerable: armado.criterio.maximo_tolerable,
           proporcion_permitida: armado.criterio.proporcion_permitida,
         };
-        let resumen;
-        if (entrada.cantidadReplicas === 1) {
-          const corrida = simular(armado.configuracion);
-          const metrica = calcularMetricas(corrida, opciones);
-          resumen = {
-            cantidad: 1,
-            resumen: Object.fromEntries(
-              [
-                ["Wq", metrica.Wq],
-                ["Lq", metrica.Lq],
-                ["rho_global", metrica.rho_global],
-                [
-                  "porcentaje_espera_mayor_tolerable",
-                  metrica.porcentaje_espera_mayor_tolerable,
-                ],
-              ].map(([nombre, valor]) => [nombre, { media: valor }]),
-            ),
-          };
-          barraProgreso.value = 100;
-        } else {
-          resumen = await correrReplicasAsincronas(
-            armado.configuracion,
-            entrada.cantidadReplicas,
-            {
-              ...opciones,
-              alProgreso: (completadas, total) => {
-                barraProgreso.value = (100 * completadas) / total;
-                estadoReplicas.textContent = `Réplicas: ${completadas} de ${total}.`;
-              },
+        trabajoActivo = obtenerClienteWorker().ejecutar(
+          {
+            tipo: "replicas",
+            configuracion: armado.configuracion,
+            cantidad: entrada.cantidadReplicas,
+            opciones,
+          },
+          {
+            alProgreso: (completadas, total) => {
+              barraProgreso.value = (100 * completadas) / total;
+              estadoReplicas.textContent = `Réplicas: ${completadas} de ${total}.`;
             },
-          );
-        }
+          },
+        );
+        const resultadoWorker = await trabajoActivo.resultado;
+        const resumen = resultadoWorker.resultado;
         salidaReplicas.replaceChildren();
         const lista = nodo("dl", { clase: "medidas" });
         for (const [clave, etiqueta] of [
           ["Wq", "Wq (min)"],
           ["Lq", "Lq"],
-          ["rho_global", "rho"],
+          ["rho_global", "rho global"],
           ["porcentaje_espera_mayor_tolerable", "Espera > máximo (%)"],
         ]) {
           const medida = resumen.resumen[clave];
           const valor = nodo("dd", {
-            texto:
-              resumen.cantidad === 1
-                ? `${formatoLocal.format(medida.media)} · IC 95 % no estimable con una réplica`
-                : `${formatoLocal.format(medida.media)} · IC 95 % [${formatoLocal.format(medida.ic95.inferior)}, ${formatoLocal.format(medida.ic95.superior)}]`,
+            texto: textoResumen(
+              medida,
+              false,
+              clave === "porcentaje_espera_mayor_tolerable",
+            ),
           });
           lista.append(nodo("dt", { texto: etiqueta }), valor);
+        }
+        for (const [id, medida] of Object.entries(
+          resumen.resumen.rho_por_ventanilla,
+        )) {
+          lista.append(
+            nodo("dt", { texto: `rho ventanilla ${id}` }),
+            nodo("dd", { texto: textoResumen(medida, true) }),
+          );
         }
         salidaReplicas.append(
           nodo("h3", { texto: "Resumen de réplicas" }),
@@ -1692,11 +2065,29 @@ export function iniciarLaboratorio({
         estadoReplicas.textContent = `Cálculo completado: ${resumen.cantidad} réplica${resumen.cantidad === 1 ? "" : "s"}.`;
         estadoReplicas.className = "estado estado-correcto";
       } catch (error) {
-        estadoReplicas.textContent = `No fue posible correr las réplicas: ${error.message}`;
-        estadoReplicas.className = "estado estado-error";
+        if (error.name === "ReplicasCanceladasError") {
+          estadoReplicas.textContent =
+            "Corrida cancelada; no se aplicaron resultados parciales.";
+          estadoReplicas.className = "estado";
+          barraProgreso.value = 0;
+          barraProgreso.hidden = true;
+        } else {
+          estadoReplicas.textContent =
+            `No fue posible correr las réplicas: ${error.message}`;
+          estadoReplicas.className = "estado estado-error";
+        }
       } finally {
+        trabajoActivo = undefined;
         botonReplicas.disabled = false;
+        formulario.querySelector("#simular-laboratorio").disabled = false;
+        panelComparar.querySelector("#correr-comparacion").disabled =
+          escenariosGuardados.length === 0;
+        botonCancelar.hidden = true;
       }
+      return;
+    }
+    if (boton.id === "cancelar-replicas") {
+      trabajoActivo?.cancelar();
       return;
     }
     if (boton.id === "volver-observados") {

@@ -149,15 +149,25 @@
   distribución elegida.
 - El campo de réplicas admite 1–1.000. Una réplica muestra su media, pero no
   inventa un IC; desde dos réplicas se calcula el IC t de 95 %. Las semillas
-  son consecutivas a partir de la semilla del escenario. Hasta la fase 7, el
-  progreso cede el hilo principal cada 10 réplicas; después se trasladará al
-  Web Worker.
+  son consecutivas a partir de la semilla del escenario. En fase 7 las
+  réplicas y comparaciones se ejecutan en un Web Worker de módulo, cargado con
+  una URL relativa al módulo para funcionar bajo el prefijo de GitHub Pages.
+  El worker informa progreso cada 10 réplicas y revisa cancelación en esos
+  límites; solo entrega el resumen completo, nunca un resultado parcial.
 - La configuración JSON lleva versión 1 y se valida antes de aplicarse. El
   enlace codifica el JSON compacto en `#laboratorio=` para no enviar datos al
   servidor; si los conteos observados no cambiaron y no son el modo activo, se
   reconstruyen desde `data/observados.json` al cargar para no inflar el hash.
   La descarga mantiene JSON indentado para lectura. Un hash inválido informa
-  el problema y deja activo el preajuste de datos observados.
+  el problema y deja activo el preajuste de datos observados. Los enlaces de
+  más de 2.000 caracteres muestran el largo exacto y recomiendan
+  «Descargar configuración (JSON)».
+- La pestaña Comparar conserva hasta cuatro escenarios nombrados. Todas las
+  configuraciones usan la misma semilla inicial y secuencia consecutiva
+  (números aleatorios comunes); la tabla reporta media e IC 95 % por métrica,
+  incluida la rho de cada ventanilla. El gráfico compara Wq con sus intervalos.
+  El barrido opcional incluye ×1,0 y factores ×1,1–×2,0; el resultado señala
+  el primer factor que incumple el criterio.
 - La comparación de la escena confirmó que los conteos y atributos GPU de
   cuerpo, cabeza, piernas y anillo eran válidos también antes de `bc61d78`;
   ese commit no originó la ausencia visual. Se aumentó la escala low-poly

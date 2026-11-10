@@ -156,7 +156,32 @@
             Cambia los valores y prueba escenarios sin modificar el código.
             La escena permanece visible mientras recorres este formulario.
           </p>
-          <form id="formulario-laboratorio" novalidate>
+          <div class="pestanas-laboratorio" role="tablist" aria-label="Secciones del laboratorio">
+            <button
+              id="pestana-ajustar"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="formulario-laboratorio"
+            >
+              Ajustar
+            </button>
+            <button
+              id="pestana-comparar"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-laboratorio-comparar"
+            >
+              Comparar
+            </button>
+          </div>
+          <form
+            id="formulario-laboratorio"
+            role="tabpanel"
+            aria-labelledby="pestana-ajustar"
+            novalidate
+          >
             <fieldset id="laboratorio-configuracion">
               <legend>Ventanillas</legend>
               <label class="campo-laboratorio" for="nombre-preajuste">
@@ -339,6 +364,9 @@
                 <small>Repite el escenario con semillas consecutivas; una réplica no estima variabilidad.</small>
               </label>
               <button id="correr-replicas" type="button">Correr réplicas</button>
+              <button id="cancelar-replicas" type="button" class="boton-secundario" hidden>
+                Cancelar corrida
+              </button>
               <progress id="progreso-replicas" max="100" value="0" aria-label="Progreso de réplicas" hidden></progress>
               <p id="estado-replicas" class="estado" role="status" aria-live="polite"></p>
               <div id="resultados-replicas" class="resultados-laboratorio" hidden></div>
@@ -368,6 +396,63 @@
               <h3>Medidas de esta corrida</h3>
             </section>
           </form>
+          <section
+            id="panel-laboratorio-comparar"
+            class="comparar-laboratorio"
+            role="tabpanel"
+            aria-labelledby="pestana-comparar"
+            hidden
+          >
+            <h3>Escenarios guardados</h3>
+            <label class="campo-laboratorio" for="nombre-escenario">
+              <span>Nombre de la configuración actual</span>
+              <input id="nombre-escenario" type="text" maxlength="40">
+              <small>
+                Guarda una copia de la configuración activa; puedes comparar
+                hasta cuatro.
+              </small>
+            </label>
+            <button id="guardar-escenario" type="button">Guardar para comparar</button>
+            <ul id="lista-escenarios" class="lista-escenarios" aria-live="polite"></ul>
+            <label class="opcion-barrido" for="activar-barrido-demanda">
+              <input id="activar-barrido-demanda" type="checkbox">
+              <span>Barrer la demanda de ×1,0 a ×2,0</span>
+            </label>
+            <p class="ayuda">
+              Cada escenario usa la misma secuencia de semillas. El barrido
+              aumenta la demanda en pasos de 0,1 y señala el primer factor que
+              no cumple.
+            </p>
+            <button id="correr-comparacion" type="button" disabled>
+              Correr comparación
+            </button>
+            <button id="cancelar-comparacion" type="button" class="boton-secundario" hidden>
+              Cancelar comparación
+            </button>
+            <progress
+              id="progreso-comparacion"
+              max="100"
+              value="0"
+              aria-label="Progreso de comparación"
+              hidden
+            ></progress>
+            <p
+              id="estado-comparacion-laboratorio"
+              class="estado"
+              role="status"
+              aria-live="polite"
+            ></p>
+            <div
+              id="resultados-comparacion-laboratorio"
+              class="resultados-laboratorio"
+              hidden
+            >
+              <h3>Resultados por escenario</h3>
+              <div id="tabla-escenarios" class="tabla-desplazable"></div>
+              <div id="grafico-escenarios" class="grafico-escenarios"></div>
+              <div id="resultados-barrido"></div>
+            </div>
+          </section>
         </section>
 
         <section

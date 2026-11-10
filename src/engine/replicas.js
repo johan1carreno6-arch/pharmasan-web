@@ -137,6 +137,7 @@ function aplanarMetricas(medidas) {
   return {
     n: medidas.n,
     rho_global: medidas.rho_global,
+    rho_por_ventanilla: medidas.rho_por_ventanilla,
     Lq: medidas.Lq,
     L: medidas.L,
     Wq: medidas.Wq,
@@ -144,6 +145,13 @@ function aplanarMetricas(medidas) {
     P_esperar: medidas.P_esperar,
     porcentaje_espera_mayor_tolerable: medidas.porcentaje_espera_mayor_tolerable,
   };
+}
+
+export class ReplicasCanceladasError extends Error {
+  constructor() {
+    super("La corrida de réplicas fue cancelada.");
+    this.name = "ReplicasCanceladasError";
+  }
 }
 
 export function correrReplicas(configuracion, cantidad, opciones = {}) {
@@ -171,25 +179,36 @@ export function correrReplicas(configuracion, cantidad, opciones = {}) {
 
 function resumirMuestra(valores, semillas) {
   const cantidad = valores.length;
-  const nombres = Object.keys(valores[0]);
-  const tCritico = valorCriticoT(cantidad - 1);
+  const resumirValores = (muestra) => {
+    const media = muestra.reduce((suma, valor) => suma + valor, 0) / cantidad;
+    if (cantidad === 1) return { media };
+    const varianza =
+      muestra.reduce((suma, valor) => suma + (valor - media) ** 2, 0) /
+      (cantidad - 1);
+    const margen = valorCriticoT(cantidad - 1) * Math.sqrt(varianza / cantidad);
+    return {
+      media,
+      desviacion: Math.sqrt(varianza),
+      ic95: { inferior: media - margen, superior: media + margen },
+    };
+  };
+  const nombres = Object.keys(valores[0]).filter(
+    (nombre) => nombre !== "rho_por_ventanilla",
+  );
   const resumen = Object.fromEntries(
-    nombres.map((nombre) => {
-      const muestra = valores.map((replica) => replica[nombre]);
-      const media = muestra.reduce((suma, valor) => suma + valor, 0) / cantidad;
-      const varianza =
-        muestra.reduce((suma, valor) => suma + (valor - media) ** 2, 0) /
-        (cantidad - 1);
-      const margen = tCritico * Math.sqrt(varianza / cantidad);
-      return [
-        nombre,
-        {
-          media,
-          desviacion: Math.sqrt(varianza),
-          ic95: { inferior: media - margen, superior: media + margen },
-        },
-      ];
-    }),
+    nombres.map((nombre) => [
+      nombre,
+      resumirValores(valores.map((replica) => replica[nombre])),
+    ]),
+  );
+  const idsVentanillas = Object.keys(valores[0].rho_por_ventanilla ?? {});
+  resumen.rho_por_ventanilla = Object.fromEntries(
+    idsVentanillas.map((id) => [
+      id,
+      resumirValores(
+        valores.map((replica) => replica.rho_por_ventanilla[id]),
+      ),
+    ]),
   );
 
   return {
@@ -205,8 +224,8 @@ export async function correrReplicasAsincronas(
   cantidad,
   opciones = {},
 ) {
-  if (!Number.isInteger(cantidad) || cantidad < 2) {
-    throw new RangeError("Se requieren al menos dos réplicas.");
+  if (!Number.isInteger(cantidad) || cantidad < 1) {
+    throw new RangeError("Se requiere al menos una réplica.");
   }
   if (!Number.isInteger(configuracion?.semilla)) {
     throw new TypeError("La configuración requiere una semilla entera explícita.");
@@ -216,6 +235,9 @@ export async function correrReplicasAsincronas(
   const valores = [];
   const lote = Math.max(1, opciones.lote ?? 10);
   for (let indice = 0; indice < cantidad; indice += 1) {
+    if (opciones.estaCancelado?.()) {
+      throw new ReplicasCanceladasError();
+    }
     const semilla = configuracion.semilla + indice;
     if (!Number.isSafeInteger(semilla)) {
       throw new RangeError("La secuencia de semillas excede el rango seguro de enteros.");
@@ -226,6 +248,9 @@ export async function correrReplicasAsincronas(
     if ((indice + 1) % lote === 0 || indice + 1 === cantidad) {
       opciones.alProgreso?.(indice + 1, cantidad);
       await new Promise((resolver) => setTimeout(resolver, 0));
+      if (opciones.estaCancelado?.()) {
+        throw new ReplicasCanceladasError();
+      }
     }
   }
 

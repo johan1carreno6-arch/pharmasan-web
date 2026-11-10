@@ -424,6 +424,73 @@ summary {
   gap: 0.65rem;
 }
 
+.pestanas-laboratorio {
+  display: flex;
+  gap: 0.45rem;
+  margin: 0.75rem 0;
+}
+
+.pestanas-laboratorio [role="tab"] {
+  min-height: 44px;
+  padding-inline: 1rem;
+  border: 1px solid #afc5b7;
+  background: #edf4ef;
+  color: #214d39;
+}
+
+.pestanas-laboratorio [aria-selected="true"] {
+  border-color: #27664b;
+  background: #27664b;
+  color: #fff;
+}
+
+.comparar-laboratorio {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.lista-escenarios {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lista-escenarios li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem;
+  border: 1px solid #d5e2d9;
+  border-radius: 0.45rem;
+  font-size: 0.8rem;
+}
+
+.opcion-barrido {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.82rem;
+}
+
+.opcion-barrido input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #27664b;
+}
+
+#progreso-replicas:not([hidden]),
+#progreso-comparacion:not([hidden]) {
+  display: block;
+  width: 100%;
+  height: 1rem;
+  margin: 0.55rem 0;
+  accent-color: #206344;
+}
+
 .panel-laboratorio fieldset,
 .ventanilla-laboratorio,
 .atencion-laboratorio {
@@ -550,6 +617,61 @@ summary {
 
 .resultados-laboratorio .medidas {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rho-ventanilla {
+  display: block;
+  min-width: 13rem;
+}
+
+.criterio-cumple {
+  color: #206344;
+  font-weight: 750;
+}
+
+.criterio-incumple {
+  color: #a32121;
+  font-weight: 750;
+}
+
+.grafico-escenarios {
+  margin-top: 0.75rem;
+  overflow: hidden;
+}
+
+.grafico-escenarios svg {
+  display: block;
+  width: 100%;
+  max-height: 26rem;
+}
+
+.eje-grafico,
+.intervalo-grafico {
+  stroke: #274c3b;
+  stroke-width: 2;
+}
+
+.eje-grafico {
+  stroke: #9aafa2;
+  stroke-width: 1;
+}
+
+.barra-grafico {
+  fill: #c07b43;
+}
+
+.barra-grafico.cumple {
+  fill: #397d65;
+}
+
+.etiqueta-grafico,
+.valor-grafico {
+  fill: #18352b;
+  font-size: 12px;
+}
+
+.valor-grafico {
+  font-weight: 700;
 }
 
 .panel-laboratorio table {
