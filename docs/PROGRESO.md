@@ -1,5 +1,40 @@
 # Progreso
 
+## 2026-11-09 — Fase 6: laboratorio
+
+- **Hecho:** completados los faltantes del Prompt 6. Se añadió la importación
+  de CSV por texto o archivo, con autodetección de `,`/`;`, BOM, decimales con
+  coma, encabezados de la exportación española, validación en español y límite
+  de **500 filas**. `atencion_min` por paciente prevalece sobre la distribución
+  configurada. El laboratorio ejecuta entre **1 y 1.000 réplicas** y presenta
+  medias e IC 95 % para Wq, Lq, rho y porcentaje de espera sobre el máximo;
+  una sola réplica informa que no se puede estimar el intervalo. Se agregaron
+  descargar/cargar JSON versión 1 y copiar/abrir enlaces con escenario en el
+  hash, incluidos errores claros y retorno a observados ante un hash inválido.
+- **Navegador:** Playwright, **1366×768** y **390×844**, sin errores de consola.
+  La corrida observada del laboratorio produjo **22 pacientes y Wq = 0,103
+  min**. Un CSV con estructura exportada por la app (pegado) y un CSV propio
+  (archivo) mostraron **2 filas válidas**; un CSV inválido señaló **línea 3**
+  y deshabilitó la simulación.
+  Las dos filas importadas simularon con **Wq = 0 min** y **W = 2,875 min**.
+  Dos réplicas completaron con progreso **100 %** (Wq medio **0,051 min**,
+  IC 95 % **[−0,600; 0,703]**); con una réplica se mostró el aviso de IC no
+  estimable. Se inspeccionó el Blob JSON (versión **1**, 2 filas), se cargó el
+  archivo y se abrió el hash válido (**1.419 caracteres** para el preajuste
+  observado); un hash corrupto inició `observados`.
+  Ancho de documento: **1366 px** en escritorio y **375 px** en móvil, sin
+  desbordamiento horizontal en ninguno.
+- **Archivos:** `index.html`, `src/ui/laboratorio.js`,
+  `src/ui/estilos.css`, `src/engine/simulador.js`,
+  `src/engine/replicas.js`, `tests/laboratorio.test.js`,
+  `tests/simulador.test.js`, `tests/replicas.test.js`, `docs/PLAN.md`,
+  `docs/PROGRESO.md` y `docs/DECISIONES.md`.
+- **Pruebas:** `node --test`: **54 aprobadas, 0 fallidas**; incluye CSV propio
+  y exportado, línea exacta y límite, ida/vuelta JSON/hash, límites y
+  determinismo de réplicas. `node --check` y `git diff --check`: sin errores.
+- **Pendientes:** fase 7: comparación de escenarios y traslado de las réplicas
+  a Web Worker; las demás fases siguen abiertas.
+
 ## 2026-11-09 — Verificación previa a la fase 6 y perfilado
 
 - **Hecho:** servido el sitio con `python -m http.server 8000` y probado en

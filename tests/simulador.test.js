@@ -137,6 +137,28 @@ test("los modos conteos, intervalos y CSV producen llegadas válidas", () => {
   );
 });
 
+test("el servicio indicado por fila CSV prevalece sobre la distribución", () => {
+  const resultado = simular(
+    configuracionBase(
+      {
+        modo: "csv",
+        pacientes: [
+          { id: "G1", tipo: "General", llegada_min: 0, atencion_min: 3 },
+          { id: "G2", tipo: "General", llegada_min: 0, atencion_min: 5 },
+        ],
+      },
+      {
+        ventanillas: [{ id: "G", nombre: "General", atiende: ["General"] }],
+        atencion: { General: { dist: "constante", media: 100 } },
+      },
+    ),
+  );
+  assert.deepEqual(
+    resultado.pacientes.map((paciente) => paciente.fin - paciente.inicio),
+    [3, 5],
+  );
+});
+
 test("los procesos sin fin requieren horizonte o cantidad de pacientes", () => {
   const configuracion = configuracionBase({
     modo: "poisson",

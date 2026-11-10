@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { correrReplicas, valorCriticoT } from "../src/engine/replicas.js";
+import {
+  correrReplicas,
+  correrReplicasAsincronas,
+  valorCriticoT,
+} from "../src/engine/replicas.js";
 
 test("corre réplicas con semillas consecutivas y devuelve IC t del 95 %", () => {
   const resultado = correrReplicas(
@@ -30,4 +34,26 @@ test("rechaza menos de dos réplicas", () => {
     () => correrReplicas({ semilla: 1 }, 1),
     /al menos dos réplicas/,
   );
+});
+
+test("las réplicas asíncronas son reproducibles y notifican el progreso", async () => {
+  const configuracion = {
+    ventanillas: [{ id: 1, nombre: "General", atiende: ["General"] }],
+    llegadas: { modo: "poisson", tasas_por_minuto: { General: 0.3 } },
+    atencion: { General: { dist: "exponencial", media: 2 } },
+    horizonte_min: 40,
+    semilla: 100,
+    asignacion_libres: "primera_libre",
+  };
+  const avances = [];
+  const asincrono = await correrReplicasAsincronas(configuracion, 5, {
+    lote: 2,
+    alProgreso: (completadas, total) => avances.push([completadas, total]),
+  });
+  assert.deepEqual(asincrono, correrReplicas(configuracion, 5));
+  assert.deepEqual(avances, [
+    [2, 5],
+    [4, 5],
+    [5, 5],
+  ]);
 });

@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { correrReplicas } from "../src/engine/replicas.js";
-import { crearPreajusteLaboratorio, crearConfiguracionLaboratorio, validarEntradaLaboratorio, PREAJUSTES_LABORATORIO } from "../src/ui/laboratorio.js";
+import { crearCsvPacientes } from "../src/ui/exportar-csv.js";
+import {
+  cargarConfiguracionLaboratorio,
+  crearHashConfiguracionLaboratorio,
+  crearPreajusteLaboratorio,
+  crearConfiguracionLaboratorio,
+  leerHashConfiguracionLaboratorio,
+  parsearCsvDatosPropios,
+  serializarConfiguracionLaboratorio,
+  validarEntradaLaboratorio,
+  PREAJUSTES_LABORATORIO,
+} from "../src/ui/laboratorio.js";
 
 const datos = JSON.parse(
   await readFile(new URL("../data/observados.json", import.meta.url), "utf8"),
@@ -223,5 +234,136 @@ test("el preajuste Actual reproduce el Wq base dentro del IC 95 % con 500 répli
     resumen.resumen.Wq.media >= referencia.wq_ic95_inferior &&
       resumen.resumen.Wq.media <= referencia.wq_ic95_superior,
     `Wq ${resumen.resumen.Wq.media} fuera del IC [${referencia.wq_ic95_inferior}, ${referencia.wq_ic95_superior}]`,
+  );
+});
+
+test("importa CSV con encabezados propios y el formato exportado por la app", () => {
+  const csvExportado = crearCsvPacientes(
+    [
+      {
+        id: datos.pacientes[0].id,
+        tipo: "General",
+        llegada: 1.25,
+        ventanilla: "Ventanilla 1",
+        inicio: 1.25,
+        atencion: 2.5,
+        espera: 0,
+        fin: 3.75,
+      },
+    ],
+    datos,
+  );
+  assert.deepEqual(parsearCsvDatosPropios(csvExportado), [
+    {
+      id: datos.pacientes[0].id,
+      tipo: "General",
+      llegada: 1.25,
+      atencion_min: 2.5,
+    },
+  ]);
+  assert.deepEqual(
+    parsearCsvDatosPropios(
+      "\uFEFFllegada_min;tipo;atencion_min\r\n1,5;Adulto mayor;2,25\r\n",
+    ),
+    [
+      {
+        id: "Paciente 1",
+        tipo: "Preferencial",
+        llegada: 1.5,
+        atencion_min: 2.25,
+      },
+    ],
+  );
+});
+
+test("rechaza CSV inválido con línea exacta y limita el archivo a 500 filas", () => {
+  assert.throws(
+    () => parsearCsvDatosPropios("llegada_min,tipo\n0,General\nmal,Preferencial"),
+    /Línea 3: «llegada_min» debe ser un número válido/,
+  );
+  assert.throws(
+    () => parsearCsvDatosPropios("llegada_min,tipo\n0,Otro"),
+    /Línea 2: tipo no reconocido/,
+  );
+  assert.throws(
+    () => parsearCsvDatosPropios("llegada_min\n1"),
+    /Línea 1: faltan las columnas obligatorias/,
+  );
+  const quinientosPacientes = [
+    "llegada_min,tipo",
+    ...Array.from({ length: 500 }, (_, indice) => `${indice},General`),
+  ].join("\n");
+  assert.equal(parsearCsvDatosPropios(quinientosPacientes).length, 500);
+  assert.throws(
+    () =>
+      parsearCsvDatosPropios(
+        `${quinientosPacientes}\n500,General`,
+      ),
+    /Línea 502: el CSV no puede superar 500 filas/,
+  );
+});
+
+test("guarda y carga la configuración JSON y el hash sin cambios", () => {
+  const entrada = {
+    ...estadoActual(),
+    modoLlegadas: "datos_propios",
+    contenidoDatosPropios: "llegada_min,tipo,atencion_min\n0,General,2\n1,Preferencial,3",
+    modoLimite: "cantidad",
+    cantidadPacientes: 2,
+  };
+  const json = serializarConfiguracionLaboratorio(entrada, datos);
+  assert.equal("conteos" in JSON.parse(json).configuracion, false);
+  assert.deepEqual(cargarConfiguracionLaboratorio(json, datos), entrada);
+  const hash = crearHashConfiguracionLaboratorio(entrada, datos);
+  assert.deepEqual(leerHashConfiguracionLaboratorio(hash, datos), entrada);
+  assert.throws(
+    () =>
+      cargarConfiguracionLaboratorio(
+        JSON.stringify({ version: 99, configuracion: entrada }),
+        datos,
+      ),
+    /versión de configuración no es compatible/,
+  );
+  const sinConteos = JSON.parse(json);
+  sinConteos.configuracion.conteos = null;
+  assert.throws(
+    () => cargarConfiguracionLaboratorio(JSON.stringify(sinConteos), datos),
+    /debe incluir los conteos observados/,
+  );
+  const preajusteDesconocido = JSON.parse(json);
+  preajusteDesconocido.configuracion.nombre = "No existe";
+  assert.throws(
+    () =>
+      cargarConfiguracionLaboratorio(
+        JSON.stringify(preajusteDesconocido),
+        datos,
+      ),
+    /preajuste válido/,
+  );
+  assert.throws(
+    () => leerHashConfiguracionLaboratorio("#laboratorio=%ZZ", datos),
+    /configuración codificada no válida/,
+  );
+});
+
+test("valida el rango de réplicas y repite resultados con la misma semilla", () => {
+  const entrada = estadoActual();
+  for (const cantidadReplicas of [1, 1000]) {
+    assert.deepEqual(
+      validarEntradaLaboratorio({ ...entrada, cantidadReplicas }, datos).errores,
+      [],
+    );
+  }
+  for (const cantidadReplicas of [0, 1001]) {
+    assert.ok(
+      validarEntradaLaboratorio({ ...entrada, cantidadReplicas }, datos).errores.some(
+        (error) => error.campo === "cantidadReplicas",
+      ),
+    );
+  }
+  const configuracion = crearConfiguracionLaboratorio(entrada, datos).configuracion;
+  assert.deepEqual(
+    correrReplicas(configuracion, 5),
+    correrReplicas(configuracion, 5),
   );
 });

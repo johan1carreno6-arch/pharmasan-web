@@ -452,7 +452,8 @@ summary {
 }
 
 .campo-laboratorio input,
-.campo-laboratorio select {
+.campo-laboratorio select,
+.campo-laboratorio textarea {
   width: 100%;
   min-width: 0;
   min-height: 44px;
@@ -463,6 +464,25 @@ summary {
   color: inherit;
   font: inherit;
   font-weight: 450;
+}
+
+.campo-laboratorio textarea {
+  min-height: 8rem;
+  resize: vertical;
+  font-family: ui-monospace, monospace;
+}
+
+.campo-laboratorio input[type="file"] {
+  height: auto;
+  padding: 0.55rem;
+}
+
+#progreso-replicas:not([hidden]) {
+  display: block;
+  width: 100%;
+  height: 1rem;
+  margin: 0.55rem 0;
+  accent-color: #206344;
 }
 
 .campo-laboratorio small,

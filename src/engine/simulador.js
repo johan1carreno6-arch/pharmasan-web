@@ -106,14 +106,24 @@ function crearLlegadas(configuracion, aleatorio) {
         _registro: registro,
       }));
   } else if (modo === "csv") {
-    if (typeof parametros.contenido !== "string") {
+    if (Array.isArray(parametros.pacientes)) {
+      llegadas = parametros.pacientes.map((registro, indice) => ({
+        id: registro.id ?? `Paciente ${indice + 1}`,
+        tipo: registro.tipo,
+        llegada: registro.llegada ?? registro.llegada_min,
+        _atencion_csv: registro.atencion_min,
+        _orden: indice,
+        _registro: registro,
+      }));
+    } else if (typeof parametros.contenido === "string") {
+      llegadas = parsearCsvLlegadas(parametros.contenido).map((registro, indice) => ({
+        ...registro,
+        _orden: indice,
+        _registro: registro,
+      }));
+    } else {
       throw new TypeError("El modo csv requiere el texto CSV en «contenido».");
     }
-    llegadas = parsearCsvLlegadas(parametros.contenido).map((registro, indice) => ({
-      ...registro,
-      _orden: indice,
-      _registro: registro,
-    }));
   } else if (modo === "conteos" || modo === "conteos_uniformes") {
     llegadas = crearLlegadasPorConteos(parametros, aleatorio);
   } else if (modo === "poisson") {
@@ -130,6 +140,12 @@ function crearLlegadas(configuracion, aleatorio) {
     }
     if (!Number.isFinite(paciente.llegada) || paciente.llegada < 0) {
       throw new RangeError("Cada llegada debe ser un tiempo finito no negativo.");
+    }
+    if (
+      paciente._atencion_csv !== undefined &&
+      (!Number.isFinite(paciente._atencion_csv) || paciente._atencion_csv <= 0)
+    ) {
+      throw new RangeError(`La duración de atención de ${paciente.id} no es válida.`);
     }
   }
 
@@ -523,7 +539,7 @@ export function simular(configuracion) {
     const inicio = esObservada ? paciente._inicio_observado : tiempo;
     const servicio = esObservada
       ? paciente._atencion_observada
-      : generadoresServicio[paciente.tipo]?.();
+      : (paciente._atencion_csv ?? generadoresServicio[paciente.tipo]?.());
     if (!Number.isFinite(servicio) || servicio <= 0) {
       throw new RangeError(`La duración de servicio de ${paciente.id} no es válida.`);
     }

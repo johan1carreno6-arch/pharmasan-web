@@ -140,3 +140,21 @@
   no recibió ningún evento de descarga en el navegador integrado, tampoco con
   un enlace CSV de control. No se cambió la exportación que prepara el Blob;
   falta repetir la recepción nativa en un navegador con descargas habilitadas.
+- Los datos propios requieren `llegada_min` y `tipo`; se reconocen también
+  `Llegada (min)` y `Grupo` para aceptar la exportación de la aplicación. El
+  separador se detecta entre coma y punto y coma, y solo con punto y coma se
+  interpreta la coma decimal. Se rechazan errores con el número de línea y
+  más de 500 filas. Si una fila incluye `atencion_min`, esa duración observada
+  sustituye al muestreo de servicio; las filas sin valor explícito usan la
+  distribución elegida.
+- El campo de réplicas admite 1–1.000. Una réplica muestra su media, pero no
+  inventa un IC; desde dos réplicas se calcula el IC t de 95 %. Las semillas
+  son consecutivas a partir de la semilla del escenario. Hasta la fase 7, el
+  progreso cede el hilo principal cada 10 réplicas; después se trasladará al
+  Web Worker.
+- La configuración JSON lleva versión 1 y se valida antes de aplicarse. El
+  enlace codifica el JSON compacto en `#laboratorio=` para no enviar datos al
+  servidor; si los conteos observados no cambiaron y no son el modo activo, se
+  reconstruyen desde `data/observados.json` al cargar para no inflar el hash.
+  La descarga mantiene JSON indentado para lectura. Un hash inválido informa
+  el problema y deja activo el preajuste de datos observados.

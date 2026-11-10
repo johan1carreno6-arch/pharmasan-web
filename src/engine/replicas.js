@@ -166,6 +166,11 @@ export function correrReplicas(configuracion, cantidad, opciones = {}) {
     valores.push(aplanarMetricas(calcularMetricas(resultado, opciones)));
   }
 
+  return resumirMuestra(valores, semillas);
+}
+
+function resumirMuestra(valores, semillas) {
+  const cantidad = valores.length;
   const nombres = Object.keys(valores[0]);
   const tCritico = valorCriticoT(cantidad - 1);
   const resumen = Object.fromEntries(
@@ -189,8 +194,40 @@ export function correrReplicas(configuracion, cantidad, opciones = {}) {
 
   return {
     cantidad,
-    semillas,
+    semillas: [...semillas],
     replicas: valores,
     resumen,
   };
+}
+
+export async function correrReplicasAsincronas(
+  configuracion,
+  cantidad,
+  opciones = {},
+) {
+  if (!Number.isInteger(cantidad) || cantidad < 2) {
+    throw new RangeError("Se requieren al menos dos réplicas.");
+  }
+  if (!Number.isInteger(configuracion?.semilla)) {
+    throw new TypeError("La configuración requiere una semilla entera explícita.");
+  }
+
+  const semillas = [];
+  const valores = [];
+  const lote = Math.max(1, opciones.lote ?? 10);
+  for (let indice = 0; indice < cantidad; indice += 1) {
+    const semilla = configuracion.semilla + indice;
+    if (!Number.isSafeInteger(semilla)) {
+      throw new RangeError("La secuencia de semillas excede el rango seguro de enteros.");
+    }
+    semillas.push(semilla);
+    const resultado = simular({ ...configuracion, semilla });
+    valores.push(aplanarMetricas(calcularMetricas(resultado, opciones)));
+    if ((indice + 1) % lote === 0 || indice + 1 === cantidad) {
+      opciones.alProgreso?.(indice + 1, cantidad);
+      await new Promise((resolver) => setTimeout(resolver, 0));
+    }
+  }
+
+  return resumirMuestra(valores, semillas);
 }

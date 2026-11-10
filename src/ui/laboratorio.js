@@ -1,5 +1,9 @@
 import { calcularMetricas } from "../engine/metricas.js";
 import { crearFlujoAleatorio } from "../engine/prng.js";
+import {
+  correrReplicasAsincronas,
+  valorCriticoT,
+} from "../engine/replicas.js";
 import { simular } from "../engine/simulador.js";
 import { normalEstandar } from "../engine/distribuciones.js";
 import { crearConfiguracionBase } from "./observados.js";
@@ -7,6 +11,7 @@ import { crearConfiguracionBase } from "./observados.js";
 const TIPOS = ["General", "Preferencial"];
 const MAXIMO_PACIENTES = 500;
 const MAXIMO_VENTANILLAS = 8;
+export const VERSION_CONFIGURACION_LABORATORIO = 1;
 const formatoLocal = new Intl.NumberFormat("es-CO", {
   maximumFractionDigits: 3,
 });
@@ -18,12 +23,250 @@ const DISTRIBUCIONES = [
   ["constante", "Constante"],
 ];
 const MODOS_LLEGADA = [
-  ["observados", "Patrones observados por grupo y día"],
+  ["observados", "Patrones observados remuestreados"],
   ["poisson", "Tasa por hora de cada grupo (Poisson)"],
   ["intervalo_fijo", "Tiempo entre llegadas fijo"],
   ["intervalo_normal", "Tiempo entre llegadas con media y desviación"],
   ["conteos", "Conteos observados por intervalo de 5 minutos"],
+  ["datos_propios", "Datos propios (CSV)"],
 ];
+
+function dividirFilaCsv(fila, separador) {
+  const columnas = [];
+  let valor = "";
+  let entreComillas = false;
+  for (let indice = 0; indice < fila.length; indice += 1) {
+    const caracter = fila[indice];
+    if (caracter === '"' && entreComillas && fila[indice + 1] === '"') {
+      valor += '"';
+      indice += 1;
+    } else if (caracter === '"') {
+      entreComillas = !entreComillas;
+    } else if (caracter === separador && !entreComillas) {
+      columnas.push(valor.trim());
+      valor = "";
+    } else {
+      valor += caracter;
+    }
+  }
+  if (entreComillas) {
+    throw new RangeError("El CSV tiene una comilla sin cerrar.");
+  }
+  columnas.push(valor.trim());
+  return columnas;
+}
+
+function contarSeparadores(fila, separador) {
+  let cantidad = 0;
+  let entreComillas = false;
+  for (let indice = 0; indice < fila.length; indice += 1) {
+    if (fila[indice] === '"' && fila[indice + 1] === '"' && entreComillas) {
+      indice += 1;
+    } else if (fila[indice] === '"') {
+      entreComillas = !entreComillas;
+    } else if (fila[indice] === separador && !entreComillas) {
+      cantidad += 1;
+    }
+  }
+  return cantidad;
+}
+
+function normalizarEncabezado(valor) {
+  return valor
+    .replace(/^\uFEFF/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function numeroCsv(valor, separador, linea, campo, permitirVacio = false) {
+  const texto = valor.trim();
+  if (!texto && permitirVacio) return undefined;
+  const normalizado = separador === ";" ? texto.replace(",", ".") : texto;
+  const numero = Number(normalizado);
+  if (!texto || !Number.isFinite(numero)) {
+    throw new RangeError(`Línea ${linea}: «${campo}» debe ser un número válido.`);
+  }
+  return numero;
+}
+
+export function parsearCsvDatosPropios(texto) {
+  if (typeof texto !== "string" || texto.trim() === "") {
+    throw new RangeError("Pega o carga un CSV con encabezado y al menos una fila.");
+  }
+  const filas = texto.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const encabezadoIndice = filas.findIndex((fila) => fila.trim() !== "");
+  const encabezado = filas[encabezadoIndice];
+  const separador =
+    contarSeparadores(encabezado, ";") > contarSeparadores(encabezado, ",")
+      ? ";"
+      : ",";
+  let nombres;
+  try {
+    nombres = dividirFilaCsv(encabezado, separador).map(normalizarEncabezado);
+  } catch (error) {
+    throw new RangeError(`Línea ${encabezadoIndice + 1}: ${error.message}`);
+  }
+  const buscar = (...opciones) =>
+    nombres.findIndex((nombre) => opciones.includes(nombre));
+  const indiceLlegada = buscar("llegada_min", "arrival_min", "llegada (min)");
+  const indiceTipo = buscar("tipo", "grupo");
+  const indiceAtencion = buscar("atencion_min", "attention_min", "atencion (min)");
+  const indiceId = buscar("id", "paciente");
+  if (indiceLlegada < 0 || indiceTipo < 0) {
+    throw new RangeError(
+      `Línea ${encabezadoIndice + 1}: faltan las columnas obligatorias llegada_min y tipo.`,
+    );
+  }
+  const registros = [];
+  for (let indice = encabezadoIndice + 1; indice < filas.length; indice += 1) {
+    if (filas[indice].trim() === "") continue;
+    const linea = indice + 1;
+    if (registros.length >= MAXIMO_PACIENTES) {
+      throw new RangeError(
+        `Línea ${linea}: el CSV no puede superar ${MAXIMO_PACIENTES} filas de pacientes.`,
+      );
+    }
+    let columnas;
+    try {
+      columnas = dividirFilaCsv(filas[indice], separador);
+    } catch (error) {
+      throw new RangeError(`Línea ${linea}: ${error.message}`);
+    }
+    if (columnas.length !== nombres.length) {
+      throw new RangeError(
+        `Línea ${linea}: hay ${columnas.length} columnas; se esperaban ${nombres.length}.`,
+      );
+    }
+    const llegada = numeroCsv(
+      columnas[indiceLlegada],
+      separador,
+      linea,
+      "llegada_min",
+    );
+    if (llegada < 0) {
+      throw new RangeError(`Línea ${linea}: «llegada_min» no puede ser negativa.`);
+    }
+    const tipoTexto = normalizarEncabezado(columnas[indiceTipo]);
+    const tipo =
+      tipoTexto === "general"
+        ? "General"
+        : ["preferencial", "adulto mayor", "adulto mayor preferencial"].includes(
+              tipoTexto,
+            )
+          ? "Preferencial"
+          : null;
+    if (!tipo) {
+      throw new RangeError(
+        `Línea ${linea}: tipo no reconocido «${columnas[indiceTipo]}»; usa General o Preferencial.`,
+      );
+    }
+    const atencion =
+      indiceAtencion < 0
+        ? undefined
+        : numeroCsv(
+            columnas[indiceAtencion],
+            separador,
+            linea,
+            "atencion_min",
+            true,
+          );
+    if (atencion !== undefined && atencion <= 0) {
+      throw new RangeError(`Línea ${linea}: «atencion_min» debe ser mayor que 0.`);
+    }
+    registros.push({
+      id:
+        indiceId < 0 || !columnas[indiceId]
+          ? `Paciente ${registros.length + 1}`
+          : columnas[indiceId],
+      tipo,
+      llegada,
+      ...(atencion === undefined ? {} : { atencion_min: atencion }),
+    });
+  }
+
+  if (registros.length === 0) {
+    throw new RangeError("El CSV debe incluir al menos una fila de pacientes.");
+  }
+  return registros;
+}
+
+export function serializarConfiguracionLaboratorio(entrada, datos) {
+  exigirDatos(datos);
+  const validacion = validarEntradaLaboratorio(entrada, datos);
+  if (validacion.errores.length) {
+    throw new RangeError(validacion.errores[0].mensaje);
+  }
+  const configuracion = { ...entrada };
+  const conteosBase = datos.llegadas.conteos_5_min;
+  if (
+    entrada.modoLlegadas !== "conteos" &&
+    JSON.stringify(entrada.conteos) === JSON.stringify(conteosBase)
+  ) {
+    delete configuracion.conteos;
+  }
+  return JSON.stringify(
+    { version: VERSION_CONFIGURACION_LABORATORIO, configuracion },
+    null,
+    2,
+  );
+}
+
+export function cargarConfiguracionLaboratorio(texto, datos) {
+  exigirDatos(datos);
+  let archivo;
+  try {
+    archivo = JSON.parse(texto);
+  } catch {
+    throw new SyntaxError("El archivo de configuración no contiene JSON válido.");
+  }
+  if (
+    !archivo ||
+    typeof archivo !== "object" ||
+    archivo.version !== VERSION_CONFIGURACION_LABORATORIO
+  ) {
+    throw new RangeError(
+      `La versión de configuración no es compatible; se requiere la versión ${VERSION_CONFIGURACION_LABORATORIO}.`,
+    );
+  }
+  const entrada = archivo.configuracion;
+  if (!entrada || typeof entrada !== "object" || Array.isArray(entrada)) {
+    throw new TypeError("El JSON debe incluir un objeto «configuracion».");
+  }
+  if (
+    !Object.prototype.hasOwnProperty.call(entrada, "conteos") &&
+    entrada.modoLlegadas !== "conteos"
+  ) {
+    entrada.conteos = datos.llegadas.conteos_5_min.map((intervalo) => ({
+      ...intervalo,
+    }));
+  }
+  const validacion = validarEntradaLaboratorio(entrada, datos);
+  if (validacion.errores.length) {
+    throw new RangeError(`Configuración no válida: ${validacion.errores[0].mensaje}`);
+  }
+  return entrada;
+}
+
+export function crearHashConfiguracionLaboratorio(entrada, datos) {
+  const serializada = serializarConfiguracionLaboratorio(entrada, datos);
+  return `#laboratorio=${encodeURIComponent(
+    JSON.stringify(JSON.parse(serializada)),
+  )}`;
+}
+
+export function leerHashConfiguracionLaboratorio(hash, datos) {
+  if (!hash?.startsWith("#laboratorio=")) return null;
+  let contenido;
+  try {
+    contenido = decodeURIComponent(hash.slice("#laboratorio=".length));
+  } catch {
+    throw new SyntaxError("El enlace tiene una configuración codificada no válida.");
+  }
+  return cargarConfiguracionLaboratorio(contenido, datos);
+}
 
 function promedio(valores) {
   return valores.length
@@ -115,6 +358,8 @@ export function crearPreajusteLaboratorio(nombre, datos, semilla) {
     nombre,
     ventanillas: crearConfiguracionVentanasPreajuste(nombre),
     modoLlegadas: "observados",
+    contenidoDatosPropios: "",
+    cantidadReplicas: 100,
     tasaGeneralHora: 60 / promedio(interllegadas.General),
     tasaPreferencialHora: 60 / promedio(interllegadas.Preferencial),
     intervaloMedia: intervaloMedio,
@@ -192,6 +437,24 @@ function tasaPorGrupo(entrada, datos) {
       ]),
     );
   }
+  if (entrada.modoLlegadas === "datos_propios") {
+    try {
+      const pacientes = parsearCsvDatosPropios(entrada.contenidoDatosPropios);
+      const llegadaMinima = Math.min(...pacientes.map((paciente) => paciente.llegada));
+      const llegadaMaxima = Math.max(...pacientes.map((paciente) => paciente.llegada));
+      const duracion = Math.max(0, llegadaMaxima - llegadaMinima);
+      return Object.fromEntries(
+        TIPOS.map((tipo) => [
+          tipo,
+          duracion > 0
+            ? pacientes.filter((paciente) => paciente.tipo === tipo).length / duracion
+            : 0,
+        ]),
+      );
+    } catch {
+      return { General: 0, Preferencial: 0 };
+    }
+  }
   if (entrada.modoLlegadas !== "observados") {
     return { General: 0, Preferencial: 0 };
   }
@@ -205,6 +468,14 @@ function tasaPorGrupo(entrada, datos) {
 }
 
 function mediaAtencion(entrada, datos, tipo) {
+  if (entrada.modoLlegadas === "datos_propios") {
+    const registros = parsearCsvDatosPropios(entrada.contenidoDatosPropios).filter(
+      (paciente) => paciente.tipo === tipo && paciente.atencion_min !== undefined,
+    );
+    if (registros.length) {
+      return promedio(registros.map((paciente) => paciente.atencion_min));
+    }
+  }
   const parametros = entrada.atencion?.[tipo];
   if (parametros?.dist === "empirica") {
     return promedio(datos.atencion[tipo].valores_observados_min);
@@ -226,6 +497,30 @@ export function validarEntradaLaboratorio(entrada, datos) {
       advertencias,
       rhoEstimado: 0,
     };
+  }
+
+  if (
+    typeof entrada.nombre !== "string" ||
+    !PREAJUSTES_LABORATORIO.includes(entrada.nombre)
+  ) {
+    agregarError(errores, "nombre_preajuste", "Selecciona un preajuste válido.");
+  }
+  if (typeof entrada.contenidoDatosPropios !== "string") {
+    agregarError(
+      errores,
+      "contenidoDatosPropios",
+      "Los datos propios deben estar en formato de texto CSV.",
+    );
+  }
+  if (!Array.isArray(entrada.conteos)) {
+    agregarError(
+      errores,
+      "conteos",
+      "La configuración debe incluir los conteos observados.",
+    );
+  }
+  if (typeof entrada.diaConteos !== "string") {
+    agregarError(errores, "diaConteos", "El día de los conteos debe ser texto.");
   }
 
   if (
@@ -357,6 +652,13 @@ export function validarEntradaLaboratorio(entrada, datos) {
       });
     }
   }
+  if (entrada.modoLlegadas === "datos_propios") {
+    try {
+      parsearCsvDatosPropios(entrada.contenidoDatosPropios);
+    } catch (error) {
+      agregarError(errores, "contenidoDatosPropios", error.message);
+    }
+  }
 
   if (!["cantidad", "duracion"].includes(entrada.modoLimite)) {
     agregarError(errores, "modoLimite", "Elige limitar por pacientes o duración.");
@@ -381,6 +683,17 @@ export function validarEntradaLaboratorio(entrada, datos) {
       errores,
       "duracionMin",
       "La duración debe ser mayor que 0 y no superar 1.440 min.",
+    );
+  }
+  if (
+    !Number.isInteger(entrada.cantidadReplicas) ||
+    entrada.cantidadReplicas < 1 ||
+    entrada.cantidadReplicas > 1000
+  ) {
+    agregarError(
+      errores,
+      "cantidadReplicas",
+      "El número de réplicas debe ser un entero entre 1 y 1.000.",
     );
   }
   if (
@@ -593,6 +906,12 @@ function crearLlegadasExplicitas(entrada) {
 }
 
 function crearLlegadasLaboratorio(entrada, datos) {
+  if (entrada.modoLlegadas === "datos_propios") {
+    return {
+      modo: "csv",
+      pacientes: parsearCsvDatosPropios(entrada.contenidoDatosPropios),
+    };
+  }
   if (entrada.modoLlegadas === "poisson") {
     return {
       modo: "poisson",
@@ -775,8 +1094,11 @@ function leerEntrada(formulario, conteosBase = []) {
     conteos.set(claveConteo(fila), { ...fila, llegadas: campo.valueAsNumber });
   }
   return {
+    nombre: control(formulario, "nombre_preajuste").value,
     ventanillas,
     modoLlegadas: control(formulario, "modoLlegadas").value,
+    contenidoDatosPropios: control(formulario, "contenidoDatosPropios").value,
+    cantidadReplicas: numero(formulario, "cantidadReplicas"),
     tasaGeneralHora: numero(formulario, "tasaGeneralHora"),
     tasaPreferencialHora: numero(formulario, "tasaPreferencialHora"),
     intervaloMedia: numero(formulario, "intervaloMedia"),
@@ -974,6 +1296,8 @@ function renderizarAtencion(formulario, estado) {
 function aplicarEstado(formulario, estado) {
   for (const [nombre, valor] of Object.entries({
     modoLlegadas: estado.modoLlegadas,
+    contenidoDatosPropios: estado.contenidoDatosPropios ?? "",
+    cantidadReplicas: estado.cantidadReplicas ?? 100,
     tasaGeneralHora: estado.tasaGeneralHora,
     tasaPreferencialHora: estado.tasaPreferencialHora,
     intervaloMedia: estado.intervaloMedia,
@@ -995,6 +1319,8 @@ function aplicarEstado(formulario, estado) {
     control(formulario, nombre).value = String(valor ?? "");
   }
   control(formulario, "nombre_preajuste").value = estado.nombre;
+  formulario.querySelector("#archivo-csv-propio").value = "";
+  formulario.querySelector("#archivo-configuracion").value = "";
   renderizarVentanillas(formulario, estado.ventanillas);
   renderizarAtencion(formulario, estado);
   renderizarConteos(formulario, estado.conteos, estado.diaConteos);
@@ -1035,6 +1361,27 @@ function actualizarVisibilidad(formulario) {
           : "Fracción de las llegadas que serán de adultos mayores.";
   formulario.querySelector("#ayuda-conteos-dia").hidden = modo !== "conteos";
   formulario.querySelector("#ayuda-conteos-tabla").hidden = modo !== "conteos";
+}
+
+function actualizarCsvPropio(formulario) {
+  const estadoCsv = formulario.querySelector("#estado-csv-propio");
+  const contenido = control(formulario, "contenidoDatosPropios").value;
+  if (!contenido.trim()) {
+    estadoCsv.textContent = "";
+    estadoCsv.className = "estado";
+    return;
+  }
+  try {
+    const pacientes = parsearCsvDatosPropios(contenido);
+    estadoCsv.textContent = `CSV válido: ${pacientes.length} pacientes.`;
+    estadoCsv.className = "estado estado-correcto";
+    control(formulario, "modoLimite").value = "cantidad";
+    control(formulario, "cantidadPacientes").value = String(pacientes.length);
+  } catch (error) {
+    estadoCsv.textContent = error.message;
+    estadoCsv.className = "estado estado-error";
+  }
+  actualizarVisibilidad(formulario);
 }
 
 function limpiarErrores(formulario) {
@@ -1124,13 +1471,33 @@ export function iniciarLaboratorio({
   const botonObservados = formulario.querySelector("#volver-observados");
   const resultados = formulario.querySelector("#resultados-laboratorio");
   const advertencias = formulario.querySelector("#advertencias-laboratorio");
-  const inicial = crearPreajusteLaboratorio(
+  let inicial = crearPreajusteLaboratorio(
     "Actual (2 generales + 1 preferencial)",
     datos,
     datos.meta.semilla_usada,
   );
+  const estadoConfiguracion = formulario.querySelector("#estado-configuracion");
+  let avisoHash = "";
+  if (window.location.hash) {
+    try {
+      const cargada = leerHashConfiguracionLaboratorio(window.location.hash, datos);
+      if (!cargada) {
+        throw new RangeError("El enlace no contiene una configuración del laboratorio.");
+      }
+      inicial = cargada;
+      avisoHash = "Configuración cargada desde el enlace.";
+    } catch (error) {
+      avisoHash = `Enlace inválido; se iniciaron los datos observados. ${error.message}`;
+    }
+  }
   let conteosMemoria = inicial.conteos;
   aplicarEstado(formulario, inicial);
+  if (avisoHash) {
+    estadoConfiguracion.textContent = avisoHash;
+    estadoConfiguracion.className = avisoHash.startsWith("Configuración")
+      ? "estado estado-correcto"
+      : "estado estado-error";
+  }
 
   function refrescarValidacion() {
     const validacion = validarEntradaLaboratorio(
@@ -1201,6 +1568,137 @@ export function iniciarLaboratorio({
       refrescarValidacion();
       return;
     }
+    if (boton.id === "descargar-configuracion") {
+      try {
+        const entrada = leerEntrada(formulario, conteosMemoria);
+        const contenido = serializarConfiguracionLaboratorio(entrada, datos);
+        const archivo = new Blob([contenido], {
+          type: "application/json;charset=utf-8",
+        });
+        const url = URL.createObjectURL(archivo);
+        const enlace = nodo("a", {
+          href: url,
+          download: "configuracion-laboratorio.json",
+        });
+        document.body.append(enlace);
+        enlace.click();
+        enlace.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        estadoConfiguracion.textContent = "Configuración JSON preparada para descargar.";
+        estadoConfiguracion.className = "estado estado-correcto";
+      } catch (error) {
+        estadoConfiguracion.textContent = `No fue posible guardar la configuración: ${error.message}`;
+        estadoConfiguracion.className = "estado estado-error";
+      }
+      return;
+    }
+    if (boton.id === "copiar-enlace-configuracion") {
+      try {
+        const entrada = leerEntrada(formulario, conteosMemoria);
+        const hash = crearHashConfiguracionLaboratorio(entrada, datos);
+        const url = `${window.location.origin}${window.location.pathname}${window.location.search}${hash}`;
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(url);
+        } else {
+          const auxiliar = nodo("textarea", { texto: url });
+          auxiliar.style.position = "fixed";
+          auxiliar.style.opacity = "0";
+          document.body.append(auxiliar);
+          auxiliar.select();
+          const copiado = document.execCommand("copy");
+          auxiliar.remove();
+          if (!copiado) throw new Error("el navegador no permitió copiar el enlace");
+        }
+        estadoConfiguracion.textContent = "Enlace con esta configuración copiado.";
+        estadoConfiguracion.className = "estado estado-correcto";
+      } catch (error) {
+        estadoConfiguracion.textContent = `No fue posible copiar el enlace: ${error.message}`;
+        estadoConfiguracion.className = "estado estado-error";
+      }
+      return;
+    }
+    if (boton.id === "correr-replicas") {
+      const botonReplicas = boton;
+      const estadoReplicas = formulario.querySelector("#estado-replicas");
+      const barraProgreso = formulario.querySelector("#progreso-replicas");
+      const salidaReplicas = formulario.querySelector("#resultados-replicas");
+      botonReplicas.disabled = true;
+      barraProgreso.hidden = false;
+      barraProgreso.value = 0;
+      estadoReplicas.textContent = "Ejecutando réplicas…";
+      estadoReplicas.className = "estado";
+      try {
+        const entrada = leerEntrada(formulario, conteosMemoria);
+        const armado = crearConfiguracionLaboratorio(entrada, datos);
+        const opciones = {
+          meta: armado.criterio.meta,
+          maximo_tolerable: armado.criterio.maximo_tolerable,
+          proporcion_permitida: armado.criterio.proporcion_permitida,
+        };
+        let resumen;
+        if (entrada.cantidadReplicas === 1) {
+          const corrida = simular(armado.configuracion);
+          const metrica = calcularMetricas(corrida, opciones);
+          resumen = {
+            cantidad: 1,
+            resumen: Object.fromEntries(
+              [
+                ["Wq", metrica.Wq],
+                ["Lq", metrica.Lq],
+                ["rho_global", metrica.rho_global],
+                [
+                  "porcentaje_espera_mayor_tolerable",
+                  metrica.porcentaje_espera_mayor_tolerable,
+                ],
+              ].map(([nombre, valor]) => [nombre, { media: valor }]),
+            ),
+          };
+          barraProgreso.value = 100;
+        } else {
+          resumen = await correrReplicasAsincronas(
+            armado.configuracion,
+            entrada.cantidadReplicas,
+            {
+              ...opciones,
+              alProgreso: (completadas, total) => {
+                barraProgreso.value = (100 * completadas) / total;
+                estadoReplicas.textContent = `Réplicas: ${completadas} de ${total}.`;
+              },
+            },
+          );
+        }
+        salidaReplicas.replaceChildren();
+        const lista = nodo("dl", { clase: "medidas" });
+        for (const [clave, etiqueta] of [
+          ["Wq", "Wq (min)"],
+          ["Lq", "Lq"],
+          ["rho_global", "rho"],
+          ["porcentaje_espera_mayor_tolerable", "Espera > máximo (%)"],
+        ]) {
+          const medida = resumen.resumen[clave];
+          const valor = nodo("dd", {
+            texto:
+              resumen.cantidad === 1
+                ? `${formatoLocal.format(medida.media)} · IC 95 % no estimable con una réplica`
+                : `${formatoLocal.format(medida.media)} · IC 95 % [${formatoLocal.format(medida.ic95.inferior)}, ${formatoLocal.format(medida.ic95.superior)}]`,
+          });
+          lista.append(nodo("dt", { texto: etiqueta }), valor);
+        }
+        salidaReplicas.append(
+          nodo("h3", { texto: "Resumen de réplicas" }),
+          lista,
+        );
+        salidaReplicas.hidden = false;
+        estadoReplicas.textContent = `Cálculo completado: ${resumen.cantidad} réplica${resumen.cantidad === 1 ? "" : "s"}.`;
+        estadoReplicas.className = "estado estado-correcto";
+      } catch (error) {
+        estadoReplicas.textContent = `No fue posible correr las réplicas: ${error.message}`;
+        estadoReplicas.className = "estado estado-error";
+      } finally {
+        botonReplicas.disabled = false;
+      }
+      return;
+    }
     if (boton.id === "volver-observados") {
       resultados.hidden = true;
       estado.textContent = "Reproduciendo de nuevo los datos observados.";
@@ -1256,11 +1754,55 @@ export function iniciarLaboratorio({
   });
 
   formulario.addEventListener("input", () => {
+    if (control(formulario, "modoLlegadas").value === "datos_propios") {
+      actualizarCsvPropio(formulario);
+    }
     conteosMemoria = leerEntrada(formulario, conteosMemoria).conteos;
     refrescarValidacion();
   });
   formulario.addEventListener("change", (evento) => {
     conteosMemoria = leerEntrada(formulario, conteosMemoria).conteos;
+    if (evento.target.id === "archivo-csv-propio" && evento.target.files?.[0]) {
+      evento.target.files[0]
+        .text()
+        .then((texto) => {
+          control(formulario, "contenidoDatosPropios").value = texto;
+          actualizarCsvPropio(formulario);
+          refrescarValidacion();
+        })
+        .catch((error) => {
+          const estadoCsv = formulario.querySelector("#estado-csv-propio");
+          estadoCsv.textContent = `No fue posible leer el archivo CSV: ${error.message}`;
+          estadoCsv.className = "estado estado-error";
+        })
+        .finally(() => {
+          evento.target.value = "";
+        });
+      return;
+    }
+    if (evento.target.id === "archivo-configuracion" && evento.target.files?.[0]) {
+      evento.target.files[0]
+        .text()
+        .then((texto) => {
+          const configuracion = cargarConfiguracionLaboratorio(texto, datos);
+          conteosMemoria = configuracion.conteos;
+          aplicarEstado(formulario, configuracion);
+          estadoConfiguracion.textContent = "Configuración cargada correctamente.";
+          estadoConfiguracion.className = "estado estado-correcto";
+          refrescarValidacion();
+        })
+        .catch((error) => {
+          estadoConfiguracion.textContent = `No fue posible cargar la configuración: ${error.message}`;
+          estadoConfiguracion.className = "estado estado-error";
+        })
+        .finally(() => {
+          evento.target.value = "";
+        });
+      return;
+    }
+    if (evento.target.name === "contenidoDatosPropios") {
+      actualizarCsvPropio(formulario);
+    }
     if (evento.target.name === "diaConteos") {
       renderizarConteos(
         formulario,

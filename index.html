@@ -179,11 +179,12 @@
               <label class="campo-laboratorio" for="modo-llegadas">
                 <span>Cómo llegan</span>
                 <select id="modo-llegadas" name="modoLlegadas">
-                  <option value="observados">Patrones observados por grupo y día</option>
+                  <option value="observados">Patrones observados remuestreados</option>
                   <option value="poisson">Tasa por hora de cada grupo (Poisson)</option>
                   <option value="intervalo_fijo">Tiempo entre llegadas fijo</option>
                   <option value="intervalo_normal">Media y desviación entre llegadas</option>
                   <option value="conteos">Conteos por intervalo observado de 5 min</option>
+                  <option value="datos_propios">Datos propios (CSV)</option>
                 </select>
                 <small>Define el mecanismo que genera las llegadas.</small>
               </label>
@@ -225,6 +226,22 @@
                   <p class="ayuda">Edita el conteo del grupo y tramo que corresponda.</p>
                   <div id="tabla-conteos-laboratorio" class="tabla-desplazable"></div>
                 </div>
+              </div>
+              <div data-modo-llegada="datos_propios" class="bloque-laboratorio" hidden>
+                <label class="campo-laboratorio" for="csv-datos-propios">
+                  <span>Pega datos CSV</span>
+                  <textarea id="csv-datos-propios" name="contenidoDatosPropios" rows="7" spellcheck="false"></textarea>
+                  <small>
+                    Requiere llegada_min y tipo; atencion_min es opcional.
+                    También acepta el CSV descargado desde esta app.
+                  </small>
+                </label>
+                <label class="campo-laboratorio" for="archivo-csv-propio">
+                  <span>O selecciona un archivo CSV</span>
+                  <input id="archivo-csv-propio" type="file" accept=".csv,text/csv">
+                  <small>Se aceptan separadores coma o punto y coma.</small>
+                </label>
+                <p id="estado-csv-propio" class="estado" role="status" aria-live="polite"></p>
               </div>
               <div class="controles-replay">
                 <label for="modo-limite">Terminar al</label>
@@ -312,6 +329,31 @@
                 <small>La misma semilla y configuración producen el mismo resultado.</small>
               </label>
               <button id="nueva-semilla" type="button">Nueva semilla</button>
+            </fieldset>
+
+            <fieldset>
+              <legend>Réplicas</legend>
+              <label class="campo-laboratorio" for="cantidad-replicas">
+                <span>Número de réplicas</span>
+                <input id="cantidad-replicas" name="cantidadReplicas" type="number" min="1" max="1000" step="1" value="100">
+                <small>Repite el escenario con semillas consecutivas; una réplica no estima variabilidad.</small>
+              </label>
+              <button id="correr-replicas" type="button">Correr réplicas</button>
+              <progress id="progreso-replicas" max="100" value="0" aria-label="Progreso de réplicas" hidden></progress>
+              <p id="estado-replicas" class="estado" role="status" aria-live="polite"></p>
+              <div id="resultados-replicas" class="resultados-laboratorio" hidden></div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Guardar y compartir</legend>
+              <button id="descargar-configuracion" type="button">Descargar configuración (JSON)</button>
+              <label class="campo-laboratorio" for="archivo-configuracion">
+                <span>Cargar configuración (JSON)</span>
+                <input id="archivo-configuracion" type="file" accept=".json,application/json">
+                <small>El archivo debe ser de la versión compatible de la aplicación.</small>
+              </label>
+              <button id="copiar-enlace-configuracion" type="button">Copiar enlace con esta configuración</button>
+              <p id="estado-configuracion" class="estado" role="status" aria-live="polite"></p>
             </fieldset>
 
             <div id="advertencias-laboratorio" aria-live="polite"></div>
