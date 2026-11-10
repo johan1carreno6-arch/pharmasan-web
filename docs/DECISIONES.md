@@ -11,8 +11,21 @@
   módulo del motor cuando se implemente.
 - El plan define nueve fases ordenadas; el despliegue de GitHub Pages queda para
   la última fase.
-- El archivo `.github/workflows/pages.yml` se mantiene como marcador sin
-  configuración hasta la fase de despliegue.
+- GitHub Pages publica desde `main` con Actions. El workflow primero ejecuta
+  `node --test` en Node 20 y solo despliega tras aprobar; la publicación manual
+  desde otra rama no despliega. Un grupo de concurrencia global evita
+  despliegues simultáneos y los permisos se limitan a lectura del contenido en
+  pruebas y escritura de Pages/ID token en publicación. Se usan las versiones
+  mayores vigentes verificadas de checkout v7, setup-node v7, configure-pages
+  v6, upload-pages-artifact v5 y deploy-pages v5.
+- El artefacto de Pages es explícitamente una lista permitida: `index.html`,
+  `src/`, `data/`, `vendor/` y `.nojekyll`. Se incluye el archivo oculto
+  `.nojekyll`; documentación, pruebas y herramientas de perfilado quedan fuera.
+  Las rutas de ejecución permanecen relativas para soportar el prefijo del
+  repositorio en GitHub Pages.
+- `origin` (`https://github.com/Johan09CD/pharmasan-web.git`) es el remoto
+  canónico documentado para publicar `main`. El flujo no hace push por sí mismo
+  desde esta tarea.
 - La interfaz mantiene un tema claro de alto contraste: los pares de texto y
   fondo principales/sutiles, botones y errores se midieron sobre **4,5:1**;
   el foco usa contorno verde oscuro. Los botones no bajan de **44 px**. El

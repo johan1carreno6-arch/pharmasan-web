@@ -9,4 +9,4 @@
 - [x] 6. Crear el laboratorio (datos propios, réplicas y configuración compartible)
 - [x] 7. Implementar comparación de escenarios y ejecución en Web Worker
 - [x] 8. Pulir la aplicación
-- [ ] 9. Desplegar en GitHub Pages
+- [x] 9. Desplegar en GitHub Pages

@@ -1,20 +1,60 @@
 # Pharmasan Web
 
-Esqueleto de una aplicación web estática para simular la atención de la
-droguería Pharmasan (Bochalema). La interfaz está escrita en español y no usa
-frameworks ni requiere un paso de compilación.
+# Pharmasan Web
 
-## Ejecución
+Aplicación estática en español para reproducir los registros observados de la
+droguería Pharmasan (Bochalema) y explorar escenarios de atención en una maqueta
+3D. Usa módulos JavaScript nativos y Three.js r160 local; no necesita
+framework, compilación ni CDN.
 
-Sirve este directorio con cualquier servidor estático y abre la dirección local
-que indique. Por ejemplo:
+## Abrir en local
+
+Desde la raíz del repositorio, inicia un servidor estático:
 
 ```powershell
 python -m http.server 8000
 ```
 
-Después visita `http://localhost:8000`. La aplicación y Three.js se cargarán
-desde archivos locales.
+Abre <http://localhost:8000>. La aplicación, los datos y Three.js se cargan
+desde el repositorio local.
+
+## Pruebas
+
+Ejecuta la batería completa con Node.js 20 o posterior:
+
+```powershell
+node --test
+```
+
+## Actualizar los datos
+
+1. Reexporta `data/observados.json` desde el proyecto `pharmasan-sim` siguiendo
+   su proceso de exportación y comprobación.
+2. Reemplaza el archivo `data/observados.json` de este repositorio con el
+   resultado exportado. No edites a mano cifras o metadatos de resultados.
+3. Ejecuta `node --test`, revisa la hora pico y la jornada completa en la
+   aplicación, y confirma la fecha y versión exportadas en «Acerca de».
+4. Incluye el JSON actualizado en el commit correspondiente.
+
+## Publicar en GitHub Pages
+
+El flujo `.github/workflows/pages.yml` ejecuta `node --test` y, si las pruebas
+pasan, publica en cada cambio de `main`. El artefacto contiene únicamente
+`index.html`, `src/`, `data/`, `vendor/` y `.nojekyll`; no incluye documentación,
+pruebas ni herramientas de perfilado.
+
+Para activar la publicación por primera vez, en GitHub abre **Settings > Pages
+> Build and deployment** y selecciona **Source: GitHub Actions**. Luego
+confirma los cambios en `main` y súbelos con:
+
+```powershell
+git push -u origin main
+```
+
+La página se publica en
+<https://johan09cd.github.io/pharmasan-web/> cuando el flujo termine. Para
+cargar la versión más reciente ignorando la caché del navegador, usa
+**Ctrl + F5**.
 
 ## Estructura
 
@@ -25,6 +65,11 @@ desde archivos locales.
 - `vendor/three/`: dependencias locales con versiones fijas.
 - `tests/`: pruebas del motor con `node --test`.
 - `docs/`: progreso, decisiones y fases del proyecto.
+
+La escena indica que es una representación esquemática y ofrece un modo
+presentación, ayuda inicial, pantalla «Acerca de» y avisos para navegadores sin
+WebGL. El panel del laboratorio permite importar datos, ejecutar réplicas y
+comparar escenarios en un Web Worker.
 
 Consulta [AGENTS.md](AGENTS.md) para las reglas de desarrollo.
 

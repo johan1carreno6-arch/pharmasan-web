@@ -1,1 +1,58 @@
-# El flujo de GitHub Pages se configurará en la fase 9.
+name: Pruebas y publicación en GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publicacion-github-pages
+  cancel-in-progress: false
+
+jobs:
+  pruebas:
+    name: Pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obtener el repositorio
+        uses: actions/checkout@v7
+      - name: Preparar Node.js 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Ejecutar pruebas
+        run: node --test
+
+  desplegar:
+    name: Publicar GitHub Pages
+    if: github.ref == 'refs/heads/main'
+    needs: pruebas
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.publicar.outputs.page_url }}
+    steps:
+      - name: Obtener el repositorio
+        uses: actions/checkout@v7
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v6
+      - name: Preparar solo los archivos de publicación
+        run: |
+          mkdir -p dist
+          cp -R index.html src data vendor .nojekyll dist/
+      - name: Subir el artefacto de Pages
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+          include-hidden-files: true
+      - name: Publicar en GitHub Pages
+        id: publicar
+        uses: actions/deploy-pages@v5

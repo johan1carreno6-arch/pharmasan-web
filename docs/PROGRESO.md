@@ -1,5 +1,40 @@
 # Progreso
 
+## 2026-11-10 — Fase 9: despliegue en GitHub Pages
+
+- **Hecho:** se reemplazó el marcador del workflow por publicación en cada
+  `push` a `main` y ejecución manual. El despliegue solo se ejecuta desde
+  `main`, espera el trabajo de pruebas y usa concurrencia para evitar
+  publicaciones simultáneas. Se fijaron permisos mínimos por trabajo, Node 20
+  y las acciones oficiales `checkout@v7`, `setup-node@v7`,
+  `configure-pages@v6`, `upload-pages-artifact@v5` y `deploy-pages@v5`.
+- **Artefacto:** el workflow copia únicamente `index.html`, `src/`, `data/`,
+  `vendor/` y `.nojekyll` a `dist`; la carga incluye archivos ocultos. Se
+  añadieron `.nojekyll` y las instrucciones de ejecución, pruebas, actualización
+  de datos y publicación en `README.md`.
+- **Rutas y subdirectorio:** no se encontraron rutas de aplicación que
+  empiecen por `/` ni referencias a `http://localhost` en `index.html` y
+  `src/`. Servida desde el directorio padre bajo `/pharmasan-web/`, la página
+  cargó `data/observados.json`, Three.js local y
+  `src/engine/replicas-worker.js`. A **1366×768** y **390×844** no hubo scroll
+  horizontal ni errores de consola/página.
+- **Verificación funcional:** el modo observado mostró **71 pacientes**,
+  **7 de 71** con espera y **Wq = 0,155 min** en la hora pico; la jornada
+  completa indica **131 pacientes**. En laboratorio se completaron una
+  simulación de **22 pacientes**, **2 réplicas** y una comparación de un
+  escenario con **2 réplicas**. El enlace compartido midió **1.431 caracteres**;
+  al abrirlo de nuevo cargó la configuración y mostró «Configuración cargada
+  desde el enlace». En la carga de 71 pacientes se midieron **21–23 fps** en
+  esta sesión; no se promete 30 fps.
+- **Pruebas:** `node --test`: **60 aprobadas, 0 fallidas**. `git diff --check`
+  y la inspección de la lista de archivos versionados no encontraron errores
+  ni archivos locales, credenciales o perfiles generados.
+- **Publicación pendiente:** no se hizo `git push`. Por ello todavía no se
+  verificó la ejecución real de GitHub Actions ni la URL pública; la fuente de
+  Pages debe configurarse como GitHub Actions.
+- **Archivos:** `.github/workflows/pages.yml`, `.nojekyll`, `README.md`,
+  `docs/PLAN.md`, `docs/PROGRESO.md` y `docs/DECISIONES.md`.
+
 ## 2026-11-10 — Fase 8: pulido, accesibilidad y gestión de recursos
 
 - **Hecho:** se ajustó la jerarquía tipográfica y el foco visible, se agregó
