@@ -52,7 +52,7 @@ test("cada preajuste usa Poisson y servicio exponencial", () => {
   }
 });
 
-test("calcula referencias M/M/c solo para sistemas homogéneos estables", () => {
+test("calcula referencias M/M/c solo para topologías homogéneas y estables", () => {
   const entrada = {
     ...estadoActual(),
     tasaGeneralHora: 2,
@@ -69,6 +69,18 @@ test("calcula referencias M/M/c solo para sistemas homogéneos estables", () => 
       { nombre: "Adulto mayor", estable: true },
     ],
   );
+  const ventanillaFlexible = {
+    ...separadas,
+    ventanillas: [
+      ...separadas.ventanillas,
+      {
+        id: 4,
+        nombre: "Ventanilla flexible",
+        atiende: ["General", "Preferencial"],
+      },
+    ],
+  };
+  assert.equal(calcularReferenciasMMc(ventanillaFlexible), null);
 
   const compartidas = {
     ...separadas,

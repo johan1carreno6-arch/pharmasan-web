@@ -18,9 +18,16 @@ const tiposContenido = {
 function crearServidor() {
   return createServer(async (solicitud, respuesta) => {
     try {
-      const ruta = decodeURIComponent(
+      const rutaSolicitada = decodeURIComponent(
         new URL(solicitud.url, "http://127.0.0.1").pathname,
       );
+      const prefijo = "/pharmasan-web";
+      const ruta =
+        rutaSolicitada === prefijo
+          ? "/"
+          : rutaSolicitada.startsWith(`${prefijo}/`)
+            ? rutaSolicitada.slice(prefijo.length)
+            : rutaSolicitada;
       const archivo = resolve(raiz, `.${ruta === "/" ? "/index.html" : ruta}`);
       if (archivo !== raiz && !archivo.startsWith(`${raiz}${sep}`)) {
         respuesta.writeHead(403).end();
@@ -83,7 +90,12 @@ async function contarPixelesDePersona(pagina, capturaBase, capturaVisible, perso
             if (diferencia > 30) distintos += 1;
           }
         }
-        return { id: persona.id, tipo: persona.tipo, pixeles: distintos };
+        return {
+          id: persona.id,
+          tipo: persona.tipo,
+          enVista: persona.enVista,
+          pixeles: distintos,
+        };
       });
     },
     { capturaBase, capturaVisible, personas },
@@ -128,10 +140,12 @@ async function reproducirHastaAmbosGrupos(pagina) {
 function comprobarEstadoDeMallas(diagnostico) {
   const cantidad = diagnostico.cantidadIds;
   assert.ok(diagnostico.personasVisibles > 0);
-  assert.equal(diagnostico.mallas[0].count, cantidad);
-  assert.equal(diagnostico.mallas[1].count, cantidad);
-  assert.equal(diagnostico.mallas[2].count, cantidad * 2);
-  assert.equal(diagnostico.mallas[3].count, cantidad);
+  assert.equal(
+    diagnostico.mallas[0].count,
+    diagnostico.personasVisibles * 12,
+  );
+  assert.equal(diagnostico.mallas[1].count, diagnostico.personasVisibles);
+  assert.ok(diagnostico.mallas[0].count <= cantidad * 12);
   assert.ok(
     diagnostico.mallas.every((malla) => malla.visible && !malla.frustumCulled),
   );
@@ -153,36 +167,41 @@ function comprobarEstadoDeMallas(diagnostico) {
   );
   assert.ok(
     diagnostico.mallas.every(
-      (malla) => malla.boundingSphere?.center[1] === -100,
+      (malla) =>
+        malla.boundingSphere &&
+        [...malla.boundingSphere.center, malla.boundingSphere.radius].every(
+          Number.isFinite,
+        ),
     ),
   );
 
   const indices = diagnostico.instancias.map((persona) => persona.indice);
   assert.equal(new Set(indices).size, indices.length);
   for (const persona of diagnostico.instancias) {
-    const [cuerpo, cabeza, piernas, anillo] = persona.mallas;
+    const [figuras, anillo] = persona.mallas;
     assert.ok(
-      [cuerpo, cabeza, ...piernas.instancias.map(() => piernas), anillo]
+      [figuras, anillo]
         .flatMap((malla) => malla.instancias)
         .every((instancia) =>
           [...instancia.posicion, ...instancia.escala].every(Number.isFinite),
         ),
     );
     assert.ok(
-      [cuerpo, cabeza, piernas, anillo].every((malla) =>
+      [figuras, anillo].every((malla) =>
         malla.instancias.every(
           (instancia) =>
             instancia.color?.some((canal) => canal > 0) ?? false,
         ),
       ),
     );
-    const colorCuerpo = cuerpo.instancias[0].color;
+    const colorCuerpo = figuras.instancias[0].color;
     if (persona.tipo === "Preferencial") {
       assert.ok(colorCuerpo[0] > colorCuerpo[1]);
     } else {
       assert.ok(colorCuerpo[1] > colorCuerpo[0]);
     }
-    const posicionCuerpo = cuerpo.instancias[0].posicion;
+    assert.equal(figuras.instancias.length, 12);
+    const posicionCuerpo = figuras.instancias[0].posicion;
     const posicionAnillo = anillo.instancias[0].posicion;
     assert.ok(Math.abs(posicionCuerpo[0] - persona.posicion[0]) < 1e-6);
     assert.ok(Math.abs(posicionCuerpo[2] - persona.posicion[2]) < 1e-6);
@@ -200,14 +219,14 @@ function comprobarEstadoDeMallas(diagnostico) {
 
 async function comprobarPixeles(pagina, contexto, diagnostico, etiqueta) {
   await contexto.evaluate((elemento) =>
-    elemento.__diagnosticoPersonas.establecerRecortePersonas(true),
+    elemento.__diagnosticoPersonas.establecerVisibilidadPersonas(false),
   );
   const capturaBase = await pagina
     .locator("#escena-local canvas")
     .first()
     .screenshot();
   await contexto.evaluate((elemento) =>
-    elemento.__diagnosticoPersonas.establecerRecortePersonas(false),
+    elemento.__diagnosticoPersonas.establecerVisibilidadPersonas(true),
   );
   const capturaVisible = await pagina
     .locator("#escena-local canvas")
@@ -219,10 +238,12 @@ async function comprobarPixeles(pagina, contexto, diagnostico, etiqueta) {
     capturaVisible.toString("base64"),
     diagnostico.instancias,
   );
-  const regionesVisibles = pixeles.filter((persona) => persona.pixeles > 0);
+  const personasEnVista = pixeles.filter((persona) => persona.enVista);
+  const regionesVisibles = personasEnVista.filter((persona) => persona.pixeles > 0);
   assert.ok(
-    regionesVisibles.length >= diagnostico.personasVisibles,
-    `Solo ${regionesVisibles.length} de ${diagnostico.personasVisibles} personas cambiaron píxeles: ${JSON.stringify(pixeles)}`,
+    personasEnVista.length > 0 &&
+      regionesVisibles.length === personasEnVista.length,
+    `Solo ${regionesVisibles.length} de ${personasEnVista.length} personas en pantalla cambiaron píxeles: ${JSON.stringify(pixeles)}`,
   );
   return `${etiqueta} (${diagnostico.renderer}): ${regionesVisibles.length}/${diagnostico.personasVisibles} regiones; ${pixeles
       .map(({ tipo, pixeles: cantidadPixeles }) => `${tipo}: ${cantidadPixeles}`)
@@ -394,6 +415,55 @@ test("las personas activas se dibujan en la escena observada", async (t) => {
       assert.match(resultadosEstables, /Diferencia de Wq/);
       assert.match(resultadosEstables, /Diferencia de Lq/);
 
+      const memoria = await pagina.evaluate(async () => {
+        const [{ simular }, { crearConfiguracionBase }] = await Promise.all([
+          import("/src/engine/simulador.js"),
+          import("/src/ui/observados.js"),
+        ]);
+        const datos = await (await fetch("/data/observados.json")).json();
+        const configuracion = {
+          ...crearConfiguracionBase(datos, 20261111),
+          cantidad_pacientes: 71,
+          horizonte_min: undefined,
+        };
+        const corrida = simular(configuracion);
+        const contenedorEscena = document.querySelector("#escena-local");
+        const recursos = [];
+        for (let indice = 0; indice < 20; indice += 1) {
+          contenedorEscena.__diagnosticoPersonas.recargarEventos(
+            corrida.eventos,
+            corrida.pacientes[20].llegada,
+          );
+          await new Promise((resolver) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolver)),
+          );
+          const diagnostico = contenedorEscena.__diagnosticoPersonas();
+          recursos.push({
+            geometrias: diagnostico.geometriasRenderer,
+            texturas: diagnostico.texturasRenderer,
+            mallasPersonas: diagnostico.mallas.length,
+          });
+        }
+        return recursos;
+      });
+      assert.equal(memoria.length, 20);
+      assert.ok(memoria.every((recursos) => recursos.mallasPersonas === 2));
+      const maxGeometrias = Math.max(...memoria.map((recursos) => recursos.geometrias));
+      const maxTexturas = Math.max(...memoria.map((recursos) => recursos.texturas));
+      assert.ok(
+        memoria.every(
+          (recursos) =>
+            recursos.geometrias <= maxGeometrias &&
+            recursos.texturas <= maxTexturas,
+        ),
+        `Los recursos del renderizador crecieron tras 20 corridas: ${JSON.stringify(memoria)}`,
+      );
+      assert.equal(memoria.at(-1).geometrias, maxGeometrias);
+      assert.equal(memoria.at(-1).texturas, maxTexturas);
+      t.diagnostic(
+        `Recursos máximos/finales tras 20 corridas: ${maxGeometrias} geometrías y ${maxTexturas} texturas.`,
+      );
+
       await pagina.locator("#volver-observados").click();
       await pagina.waitForFunction(
         () =>
@@ -403,6 +473,35 @@ test("las personas activas se dibujan en la escena observada", async (t) => {
         null,
         { timeout: 30000 },
       );
+
+      await pagina.goto(
+        `http://127.0.0.1:${port}/pharmasan-web/?depurar-personas=1`,
+        { waitUntil: "networkidle" },
+      );
+      await pagina.waitForFunction(
+        () =>
+          document.querySelector("#dia-observado") &&
+          !document.querySelector("#dia-observado").disabled,
+        null,
+        { timeout: 30000 },
+      );
+      assert.equal(
+        await pagina
+          .getByRole("heading", { name: "Simular aleatoriamente" })
+          .count(),
+        1,
+      );
+      assert.deepEqual(
+        await pagina.evaluate(async () => {
+          const datos = await fetch("data/observados.json");
+          const three = await fetch("vendor/three/three.module.js");
+          return [datos.status, three.status];
+        }),
+        [200, 200],
+      );
+      assert.deepEqual(errores, []);
+      t.diagnostic(`La aplicación cargó datos y Three.js bajo /pharmasan-web/ en ${viewport.width}x${viewport.height}.`);
+
       assert.deepEqual(errores, []);
       await contexto.close();
     });

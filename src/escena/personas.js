@@ -63,13 +63,13 @@ function posicionFila(tipo, indice) {
   ];
 }
 
-function crearPosiciones(estado) {
+function crearPosiciones(estado, tiposRegistrados) {
   const posiciones = new Map();
   const tipos = estado.tipos ?? {};
 
   for (const [nombreFila, ids] of Object.entries(estado.filas ?? {})) {
     ids.forEach((id, indice) => {
-      const tipo = tipos[id] ?? nombreFila;
+      const tipo = tiposRegistrados.get(id) ?? tipos[id] ?? nombreFila;
       posiciones.set(id, {
         id,
         tipo,
@@ -186,6 +186,52 @@ function posicionesIguales(primera, segunda) {
   return primera.every((valor, indice) => Math.abs(valor - segunda[indice]) < 1e-8);
 }
 
+function faseIdentificador(identificador) {
+  let hash = 2166136261;
+  for (const caracter of String(identificador)) {
+    hash = Math.imul(hash ^ caracter.charCodeAt(0), 16777619);
+  }
+  return ((hash >>> 0) / 0x100000000) * Math.PI * 2;
+}
+
+function obtenerMovimiento(trayectoria, tiempo, fase) {
+  let distanciaRecorrida = 0;
+  let orientacion = 0;
+  let caminando = false;
+  for (const tramo of trayectoria) {
+    const longitud = distancia(tramo.desde, tramo.hasta);
+    if (tiempo >= tramo.fin) {
+      distanciaRecorrida += longitud;
+      if (longitud > 1e-8) {
+        orientacion = Math.atan2(
+          tramo.hasta[0] - tramo.desde[0],
+          tramo.hasta[2] - tramo.desde[2],
+        );
+      }
+      continue;
+    }
+    if (tiempo >= tramo.inicio && tiempo < tramo.fin && longitud > 1e-8) {
+      const progreso = Math.max(
+        0,
+        Math.min(1, (tiempo - tramo.inicio) / (tramo.fin - tramo.inicio)),
+      );
+      distanciaRecorrida += longitud * progreso;
+      orientacion = Math.atan2(
+        tramo.hasta[0] - tramo.desde[0],
+        tramo.hasta[2] - tramo.desde[2],
+      );
+      caminando = true;
+    }
+    break;
+  }
+  return {
+    caminando,
+    orientacion,
+    fase,
+    faseMarcha: distanciaRecorrida * 9 + fase,
+  };
+}
+
 export function crearRecorridoDesdeEventos(eventos) {
   validarEventos(eventos);
   const fotogramas = [];
@@ -193,6 +239,7 @@ export function crearRecorridoDesdeEventos(eventos) {
   const llegadas = new Map();
   const inicios = new Map();
   const finales = new Map();
+  const llegadasVentanilla = new Map();
   const salidas = new Map();
   const trayectorias = new Map();
   let posicionesAnteriores = new Map();
@@ -210,7 +257,7 @@ export function crearRecorridoDesdeEventos(eventos) {
       salidas.set(evento.paciente_id, evento.tiempo);
     }
 
-    const posiciones = crearPosiciones(evento.estado);
+    const posiciones = crearPosiciones(evento.estado, tipos);
     for (const [id, persona] of posiciones) {
       if (persona.tipo === "General" || persona.tipo === "Preferencial") {
         tipos.set(id, persona.tipo);
@@ -244,14 +291,26 @@ export function crearRecorridoDesdeEventos(eventos) {
           evento.tiempo,
         );
         if (objetivo.estado === "servicio") {
-          agregarTramo(trayectoria, posicionInicial, objetivo.posicion, finEntrada);
+          const finLlegada = agregarTramo(
+            trayectoria,
+            posicionInicial,
+            objetivo.posicion,
+            finEntrada,
+          );
+          llegadasVentanilla.set(id, finLlegada);
         }
         continue;
       }
 
       trayectorias.set(id, trayectoria);
       const anterior = posicionesAnteriores.get(id);
-      if (!anterior || posicionesIguales(anterior.posicion, objetivo.posicion)) {
+      if (!anterior) {
+        continue;
+      }
+      if (posicionesIguales(anterior.posicion, objetivo.posicion)) {
+        if (objetivo.estado === "servicio" && !llegadasVentanilla.has(id)) {
+          llegadasVentanilla.set(id, evento.tiempo);
+        }
         continue;
       }
 
@@ -260,7 +319,15 @@ export function crearRecorridoDesdeEventos(eventos) {
         objetivo.estado === "servicio" && trayectoria.length > 0
           ? Math.max(evento.tiempo, trayectoria.at(-1).fin)
           : evento.tiempo;
-      agregarTramo(trayectoria, posicionActual, objetivo.posicion, inicioMovimiento);
+      const finMovimiento = agregarTramo(
+        trayectoria,
+        posicionActual,
+        objetivo.posicion,
+        inicioMovimiento,
+      );
+      if (objetivo.estado === "servicio") {
+        llegadasVentanilla.set(id, finMovimiento);
+      }
     }
 
     if (evento.tipo === "fin_servicio") {
@@ -320,6 +387,7 @@ export function crearRecorridoDesdeEventos(eventos) {
     llegadas,
     inicios,
     finales,
+    llegadasVentanilla,
     salidas,
     trayectorias,
     inicio: fotogramas[0]?.tiempo ?? 0,
@@ -369,6 +437,10 @@ export function obtenerFrameDesdeEventos(recorrido, tiempo) {
     }
     const posicion = posicionEnTrayectoria(trayectoria, tiempo);
     const inicio = recorrido.inicios.get(id);
+    const fase = faseIdentificador(id);
+    const movimiento = obtenerMovimiento(trayectoria, tiempo, fase);
+    const llegadaVentanilla = recorrido.llegadasVentanilla.get(id);
+    const finServicio = recorrido.finales.get(id);
     const espera =
       inicio === undefined
         ? Math.max(0, tiempo - llegada)
@@ -379,6 +451,15 @@ export function obtenerFrameDesdeEventos(recorrido, tiempo) {
       estado: persona.estado,
       ventanilla: persona.ventanilla,
       posicion,
+      ...movimiento,
+      gesto:
+        persona.estado === "servicio" &&
+        llegadaVentanilla !== undefined &&
+        finServicio !== undefined &&
+        tiempo >= llegadaVentanilla &&
+        tiempo < Math.min(finServicio, llegadaVentanilla + 0.35)
+          ? 1 - (tiempo - llegadaVentanilla) / 0.35
+          : 0,
       colorEspera:
         espera <= UMBRAL_META_ESPERA
           ? "verde"

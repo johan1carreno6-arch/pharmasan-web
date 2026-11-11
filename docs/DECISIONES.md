@@ -1,5 +1,41 @@
 # Decisiones
 
+## 2026-11-11 — Figura low-poly y movimiento determinista
+
+- La persona se representa con una geometría icosaédrica compartida por
+  instancias: torso, cuello, cabeza, cabello, brazos, piernas, zapatos y dos
+  partes de bastón. El anillo de espera usa su propia malla instanciada. El
+  tamaño de `count` sigue el número de personas visibles, no el total de
+  pacientes acumulados; ambas mallas mantienen `frustumCulled = false`.
+- Los tonos de piel, cabello y ropa se derivan de un hash estable del
+  identificador, no de aleatoriedad. El color de ropa diferencia General
+  (verde) y Preferencial (naranja); este último grupo puede tener cabello gris
+  y recibe bastón. Brazos y piernas oscilan con la distancia recorrida; al
+  esperar hay un balanceo leve y, al llegar a servicio, un gesto breve que solo
+  empieza al completar el trayecto hacia la ventanilla.
+- La escena libera geometrías y materiales instanciados al recargar. En veinte
+  recargas Playwright no observó crecimiento acumulado: máximo y valor final
+  **40 geometrías/10 texturas** en escritorio y **36/8** en móvil.
+- Se midió en Chromium headless con ANGLE/SwiftShader, a 1366×768, con semilla
+  **20261111** y tres muestras por corrida. Con 71 personas: antes **2, 1, 2**
+  y después **2, 1, 2 fps**. Con 300: antes **3, 4, 4** y después **4, 3, 3
+  fps**. El descenso medio con 300 es **9,1 %**, menor al umbral de 15 %; se
+  se usó una geometría de 12 vértices por pieza y solo se dibujan las instancias
+  activas. Estas cifras describen SwiftShader y no deben interpretarse como
+  rendimiento en hardware físico ni como garantía de 30 fps.
+- La prueba de píxeles compara personas visibles con la escena vacía y filtra
+  las que quedan fuera del encuadre; la oclusión o el recorte de cámara no debe
+  confundirse con una malla rota. En los dos tamaños probados las figuras
+  cambiaron píxeles y el recorte por malla siguió desactivado.
+- Las etiquetas de ID se omiten mientras alguien espera quieto para evitar que
+  una fila larga tape las figuras. Las colas compartidas consultan el grupo ya
+  registrado para cada ID; no se asigna el grupo por el nombre genérico de la
+  cola.
+- Una fila separada no equivale a dos sistemas independientes M/M/c si hay
+  ventanillas flexibles. En ese caso se omite la referencia teórica, igual que
+  en topologías incompatibles; solo se presenta cuando las hipótesis son
+  verdaderas.
+
 - El nombre visible del antiguo laboratorio es «Simular aleatoriamente» en el
   encabezado, pestaña, recorrido inicial, ayuda, etiquetas accesibles y
   documentación. Se mantienen los identificadores internos `laboratorio` y el

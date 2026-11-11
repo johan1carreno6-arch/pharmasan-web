@@ -5,6 +5,10 @@ import {
   crearRecorridoDesdeEventos,
   obtenerFrameDesdeEventos,
 } from "../src/escena/personas.js";
+import {
+  crearTransformacionesPersona,
+  obtenerColoresPersona,
+} from "../src/escena/instancias-personas.js";
 
 const POSICION_EXTERIOR = [-10.8, 0, 6.52];
 
@@ -75,6 +79,64 @@ test("la animación de personas no modifica el registro ni las métricas", () =>
   assert.equal(eventos.length, 4);
 });
 
+test("la figura cambia al caminar y conserva colores deterministas por persona", () => {
+  const persona = {
+    id: "G1",
+    tipo: "General",
+    posicion: [1, 0, 2],
+    orientacion: Math.PI / 2,
+    caminando: true,
+    faseMarcha: 1.2,
+  };
+  const transformaciones = crearTransformacionesPersona(persona, 1);
+  const quieta = crearTransformacionesPersona(
+    { ...persona, caminando: false, fase: 0.7 },
+    1,
+  );
+  const colores = obtenerColoresPersona(persona.id, persona.tipo);
+  assert.equal(transformaciones.length, 13);
+  assert.ok(
+    transformaciones.every((parte) =>
+      [...parte.posicion, ...parte.escala].every(Number.isFinite),
+    ),
+  );
+  assert.notDeepEqual(transformaciones[4], quieta[4]);
+  assert.deepEqual(colores, obtenerColoresPersona(persona.id, persona.tipo));
+  assert.notDeepEqual(colores, obtenerColoresPersona("G2", "General"));
+  assert.ok(transformaciones[10].posicion[1] < -99);
+  const cabellos = new Set(
+    Array.from({ length: 30 }, (_, indice) =>
+      obtenerColoresPersona(`Paciente ${indice + 1}`, "Preferencial")[3],
+    ),
+  );
+  const pieles = new Set(
+    Array.from({ length: 30 }, (_, indice) =>
+      obtenerColoresPersona(`Paciente ${indice + 1}`, "General")[1],
+    ),
+  );
+  const ropas = new Set(
+    Array.from({ length: 30 }, (_, indice) =>
+      obtenerColoresPersona(`Paciente ${indice + 1}`, "General")[0],
+    ),
+  );
+  assert.ok(cabellos.size > 1);
+  assert.ok(pieles.size > 1);
+  assert.ok(ropas.size > 1);
+
+  const adultoMayor = {
+    ...persona,
+    id: "P1",
+    tipo: "Preferencial",
+  };
+  assert.ok(
+    crearTransformacionesPersona(adultoMayor)[10].posicion[1] > 0,
+  );
+  assert.ok(
+    obtenerColoresPersona(adultoMayor.id, adultoMayor.tipo)[0] >
+      obtenerColoresPersona(adultoMayor.id, adultoMayor.tipo)[1],
+  );
+});
+
 test("cada paciente entra, espera, llega a servicio y sale por la puerta", () => {
   const control = crearControlPersonas();
   control.cargar(crearEventosPrueba());
@@ -103,6 +165,65 @@ test("cada paciente entra, espera, llega a servicio y sale por la puerta", () =>
 
   const afuera = control.actualizar(2.6);
   assert.ok(!afuera.personas.some((persona) => persona.id === "G1"));
+});
+
+test("la orientación, el balanceo y el gesto dependen del tiempo de la corrida", () => {
+  const control = crearControlPersonas();
+  control.cargar(crearEventosPrueba());
+
+  const caminando = control
+    .actualizar(0.1)
+    .personas.find((persona) => persona.id === "G1");
+  assert.equal(caminando.caminando, true);
+  assert.ok(Number.isFinite(caminando.orientacion));
+
+  const enAtencion = control
+    .actualizar(0.4)
+    .personas.find((persona) => persona.id === "G1");
+  assert.equal(enAtencion.caminando, false);
+  assert.ok(enAtencion.gesto > 0);
+
+  const enFila = control
+    .actualizar(1)
+    .personas.find((persona) => persona.id === "G2");
+  assert.equal(enFila.caminando, false);
+  assert.equal(enFila.gesto, 0);
+});
+
+test("la cola compartida conserva el grupo de cada paciente", () => {
+  const estado = (fila, ocupado) => ({
+    filas: { compartida: fila },
+    ventanillas: [
+      {
+        id: 1,
+        ocupada: Boolean(ocupado),
+        paciente: ocupado ?? null,
+        tipo: ocupado ? "General" : null,
+      },
+    ],
+  });
+  const control = crearControlPersonas();
+  control.cargar([
+    {
+      tipo: "llegada",
+      tiempo: 0,
+      paciente_id: "G1",
+      paciente_tipo: "General",
+      estado: estado([], "G1"),
+    },
+    {
+      tipo: "llegada",
+      tiempo: 0.1,
+      paciente_id: "P1",
+      paciente_tipo: "Preferencial",
+      estado: estado(["P1"], "G1"),
+    },
+  ]);
+  const frame = control.actualizar(0.2);
+  assert.equal(
+    frame.personas.find((persona) => persona.id === "P1").tipo,
+    "Preferencial",
+  );
 });
 
 test("las trayectorias no saltan y los saltos temporales son reversibles", () => {

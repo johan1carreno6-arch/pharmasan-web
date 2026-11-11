@@ -743,7 +743,12 @@ export function calcularReferenciasMMc(configuracion) {
       : null;
   }
 
-  if (configuracion.colas !== "separadas") return null;
+  if (
+    configuracion.colas !== "separadas" ||
+    ventanillas.some((ventanilla) => ventanilla.atiende.length !== 1)
+  ) {
+    return null;
+  }
   const resultados = TIPOS.map((tipo) => {
     const servidores = ventanillas.filter(
       (ventanilla) =>

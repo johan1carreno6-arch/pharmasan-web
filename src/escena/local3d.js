@@ -4,6 +4,8 @@ import { crearCamaraEscena } from "./camara.js";
 import {
   crearTransformacionesPersona,
   establecerInstanciaPersona,
+  obtenerColoresPersona,
+  PARTES_POR_PERSONA,
 } from "./instancias-personas.js";
 import { crearControlPersonas } from "./personas.js";
 
@@ -558,10 +560,6 @@ function crearFondo(escena) {
   escena.add(luzSol);
 }
 
-function colorGrupo(tipo) {
-  return tipo === "Preferencial" ? PALETA.preferencial : PALETA.general;
-}
-
 function colorEspera(color) {
   return { verde: 0x55a86a, amarillo: 0xe7b83f, rojo: 0xd9534f }[color];
 }
@@ -626,30 +624,11 @@ export function crearLocal3D(contenedor) {
   const coloresInstancia = new Map();
   let indicesPorId = new Map();
   let coloresPorMalla = [];
-  let personasVisiblesAnteriores = new Set();
   function colorInstancia(valor) {
     if (!coloresInstancia.has(valor)) {
       coloresInstancia.set(valor, new THREE.Color(valor));
     }
     return coloresInstancia.get(valor);
-  }
-  function establecerTransformacion(
-    malla,
-    indice,
-    posicion,
-    altura,
-    anillo = false,
-    offsetX = 0,
-  ) {
-    objetoTemporal.position.set(
-      posicion[0] + offsetX,
-      altura,
-      posicion[2],
-    );
-    objetoTemporal.rotation.set(anillo ? -Math.PI / 2 : 0, 0, 0);
-    objetoTemporal.scale.setScalar(1);
-    objetoTemporal.updateMatrix();
-    malla.setMatrixAt(indice, objetoTemporal.matrix);
   }
   const materialesIndicadores = {
     libre: recursos.material(0x84a78b, { emissive: 0x18351f }),
@@ -719,7 +698,6 @@ export function crearLocal3D(contenedor) {
     idsPersonas = [];
     indicesPorId.clear();
     coloresPorMalla = [];
-    personasVisiblesAnteriores.clear();
     frameActual = controlPersonas.reiniciar();
     contextoEtiquetas.clearRect(0, 0, etiquetas.width, etiquetas.height);
     for (const indicador of indicadores) {
@@ -732,23 +710,14 @@ export function crearLocal3D(contenedor) {
 
   function crearPersonas(eventos) {
     idsPersonas = [...new Set(eventos.map((evento) => evento.paciente_id))];
-    indicesPorId = new Map(idsPersonas.map((id, indice) => [id, indice]));
-    personasVisiblesAnteriores.clear();
+    indicesPorId = new Map();
     const capacidad = Math.max(1, idsPersonas.length, cantidadPersonas);
     if (idsPersonas.length === 0 && capacidad === 1) {
       return;
     }
-    const materialCuerpo = new THREE.MeshStandardMaterial({
+    const materialPersonas = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       roughness: 0.86,
-    });
-    const materialCabeza = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.9,
-    });
-    const materialPiernas = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.9,
     });
     const materialAnillos = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -756,19 +725,9 @@ export function crearLocal3D(contenedor) {
     });
     const componentes = [
       new THREE.InstancedMesh(
-        new THREE.CylinderGeometry(0.22, 0.3, 0.78, 6),
-        materialCuerpo,
-        capacidad,
-      ),
-      new THREE.InstancedMesh(
-        new THREE.IcosahedronGeometry(0.22, 0),
-        materialCabeza,
-        capacidad,
-      ),
-      new THREE.InstancedMesh(
-        new THREE.BoxGeometry(0.16, 0.42, 0.18),
-        materialPiernas,
-        capacidad * 2,
+        new THREE.IcosahedronGeometry(1, 0),
+        materialPersonas,
+        capacidad * PARTES_POR_PERSONA,
       ),
       new THREE.InstancedMesh(
         new THREE.RingGeometry(0.29, 0.37, 16),
@@ -780,9 +739,12 @@ export function crearLocal3D(contenedor) {
       malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       malla.castShadow = false;
       malla.frustumCulled = false;
-      const limite = malla === componentes[2] ? capacidad * 2 : capacidad;
-      for (let indice = 0; indice < limite; indice += 1) {
+      const limiteInstancias = malla === componentes[0]
+        ? capacidad * PARTES_POR_PERSONA
+        : capacidad;
+      for (let indice = 0; indice < limiteInstancias; indice += 1) {
         objetoTemporal.position.set(0, -100, 0);
+        objetoTemporal.rotation.set(0, 0, 0);
         objetoTemporal.scale.setScalar(1);
         objetoTemporal.updateMatrix();
         malla.setMatrixAt(indice, objetoTemporal.matrix);
@@ -791,6 +753,8 @@ export function crearLocal3D(contenedor) {
       escena.add(malla);
       mallasPersonas.push(malla);
     }
+    mallasPersonas[0].count = 0;
+    mallasPersonas[1].count = 0;
     coloresPorMalla = componentes.map(() => []);
   }
 
@@ -810,6 +774,9 @@ export function crearLocal3D(contenedor) {
     contextoEtiquetas.textAlign = "center";
     contextoEtiquetas.textBaseline = "middle";
     for (const persona of personas) {
+      if (persona.estado === "fila" && !persona.caminando) {
+        continue;
+      }
       const posicion = obtenerPosicionVisual(persona);
       vectorProyeccion
         .set(posicion[0], posicion[1] + 2.45, posicion[2])
@@ -833,91 +800,48 @@ export function crearLocal3D(contenedor) {
 
   function actualizarPersonas(tiempo) {
     frameActual = controlPersonas.actualizar(tiempo);
-    const personasVisibles = new Set();
+    if (mallasPersonas.length === 0) {
+      return;
+    }
     const matricesActualizadas = new Set();
     const coloresActualizados = new Set();
-    for (const persona of frameActual.personas) {
-      const indice = indicesPorId.get(persona.id);
-      if (indice === undefined) {
-        continue;
-      }
-      personasVisibles.add(persona.id);
-      const posicion = obtenerPosicionVisual(persona);
-      const transformaciones = crearTransformacionesPersona(posicion);
-      const cuerpoActualizado = establecerInstanciaPersona(
-        objetoTemporal,
-        mallasPersonas[0],
-        indice,
-        transformaciones.cuerpo,
-        colorGrupo(persona.tipo),
-        coloresPorMalla[0],
-        colorInstancia,
+    indicesPorId = new Map();
+    for (const [indice, persona] of frameActual.personas.entries()) {
+      indicesPorId.set(persona.id, indice);
+      const transformaciones = crearTransformacionesPersona(
+        persona,
+        frameActual.tiempo,
       );
-      matricesActualizadas.add(0);
-      if (cuerpoActualizado) coloresActualizados.add(0);
-      const cabezaActualizada = establecerInstanciaPersona(
-        objetoTemporal,
-        mallasPersonas[1],
-        indice,
-        transformaciones.cabeza,
-        0xe5bd96,
-        coloresPorMalla[1],
-        colorInstancia,
-      );
-      matricesActualizadas.add(1);
-      if (cabezaActualizada) coloresActualizados.add(1);
-      const piernaIzquierdaActualizada = establecerInstanciaPersona(
-        objetoTemporal,
-        mallasPersonas[2],
-        indice * 2,
-        transformaciones.piernas[0],
-        0x34433d,
-        coloresPorMalla[2],
-        colorInstancia,
-      );
-      const piernaDerechaActualizada = establecerInstanciaPersona(
-        objetoTemporal,
-        mallasPersonas[2],
-        indice * 2 + 1,
-        transformaciones.piernas[1],
-        0x34433d,
-        coloresPorMalla[2],
-        colorInstancia,
-      );
-      matricesActualizadas.add(2);
-      if (piernaIzquierdaActualizada || piernaDerechaActualizada) {
-        coloresActualizados.add(2);
+      const colores = obtenerColoresPersona(persona.id, persona.tipo);
+      for (let parte = 0; parte < PARTES_POR_PERSONA; parte += 1) {
+        const colorActualizado = establecerInstanciaPersona(
+          objetoTemporal,
+          mallasPersonas[0],
+          indice * PARTES_POR_PERSONA + parte,
+          transformaciones[parte],
+          colores[parte],
+          coloresPorMalla[0],
+          colorInstancia,
+        );
+        if (colorActualizado) coloresActualizados.add(0);
       }
       const anilloActualizado = establecerInstanciaPersona(
         objetoTemporal,
-        mallasPersonas[3],
+        mallasPersonas[1],
         indice,
-        transformaciones.anillo,
+        transformaciones[PARTES_POR_PERSONA],
         colorEspera(persona.colorEspera ?? "verde"),
-        coloresPorMalla[3],
+        coloresPorMalla[1],
         colorInstancia,
       );
-      matricesActualizadas.add(3);
-      if (anilloActualizado) coloresActualizados.add(3);
+      matricesActualizadas.add(0);
+      matricesActualizadas.add(1);
+      if (anilloActualizado) coloresActualizados.add(1);
     }
-    for (const id of personasVisiblesAnteriores) {
-      if (personasVisibles.has(id)) {
-        continue;
-      }
-      const indice = indicesPorId.get(id);
-      if (indice === undefined) {
-        continue;
-      }
-      establecerTransformacion(mallasPersonas[0], indice, [0, 0, 0], -100);
-      establecerTransformacion(mallasPersonas[1], indice, [0, 0, 0], -100);
-      establecerTransformacion(mallasPersonas[2], indice * 2, [0, 0, 0], -100);
-      establecerTransformacion(mallasPersonas[2], indice * 2 + 1, [0, 0, 0], -100);
-      establecerTransformacion(mallasPersonas[3], indice, [0, 0, 0], -100, true);
-      for (let malla = 0; malla < mallasPersonas.length; malla += 1) {
-        matricesActualizadas.add(malla);
-      }
-    }
-    personasVisiblesAnteriores = personasVisibles;
+    mallasPersonas[0].count = frameActual.personas.length * PARTES_POR_PERSONA;
+    mallasPersonas[1].count = frameActual.personas.length;
+    matricesActualizadas.add(0);
+    matricesActualizadas.add(1);
     for (const indice of matricesActualizadas) {
       mallasPersonas[indice].instanceMatrix.needsUpdate = true;
     }
@@ -941,7 +865,48 @@ export function crearLocal3D(contenedor) {
   }
 
   function obtenerDiagnosticoPersonas() {
-    const nombresMallas = ["cuerpo", "cabeza", "piernas", "anillo"];
+    const nombresMallas = ["figuras", "anillo"];
+    function obtenerTransformacion(malla, indice) {
+      const matriz = new THREE.Matrix4();
+      const posicion = new THREE.Vector3();
+      const escala = new THREE.Vector3();
+      malla?.getMatrixAt(indice, matriz);
+      matriz.decompose(posicion, new THREE.Quaternion(), escala);
+      return {
+        indice,
+        posicion: posicion.toArray(),
+        escala: escala.toArray(),
+        color: malla?.instanceColor
+          ? Array.from(malla.instanceColor.array.slice(indice * 3, indice * 3 + 3))
+          : null,
+      };
+    }
+    function resumirMalla(malla, nombre) {
+      return {
+        nombre,
+        count: malla?.count ?? 0,
+        visible: malla?.visible ?? false,
+        frustumCulled: malla?.frustumCulled ?? null,
+        boundingSphere: malla?.boundingSphere
+          ? {
+              center: malla.boundingSphere.center.toArray(),
+              radius: malla.boundingSphere.radius,
+            }
+          : null,
+        instanceMatrixVersion: malla?.instanceMatrix.version ?? null,
+        instanceColorVersion: malla?.instanceColor?.version ?? null,
+        instanceColorExiste: Boolean(malla?.instanceColor),
+        material: malla
+          ? {
+              transparent: malla.material.transparent,
+              opacity: malla.material.opacity,
+              depthWrite: malla.material.depthWrite,
+              depthTest: malla.material.depthTest,
+              renderOrder: malla.renderOrder,
+            }
+          : null,
+      };
+    }
     const instancias = frameActual.personas.map((persona) => {
       const indice = indicesPorId.get(persona.id);
       const posicion = obtenerPosicionVisual(persona);
@@ -952,11 +917,13 @@ export function crearLocal3D(contenedor) {
       ).project(camara.camara);
       const vectorCuerpo = new THREE.Vector3(
         posicion[0],
-        posicion[1] + 0.98,
+        posicion[1] + 0.99,
         posicion[2],
       ).project(camara.camara);
       const ancho = Math.max(1, contenedor.clientWidth);
       const alto = Math.max(1, contenedor.clientHeight);
+      const mallaFiguras = mallasPersonas[0];
+      const mallaAnillo = mallasPersonas[1];
 
       return {
         id: persona.id,
@@ -971,66 +938,32 @@ export function crearLocal3D(contenedor) {
           x: ((vectorCuerpo.x + 1) * ancho) / 2,
           y: ((1 - vectorCuerpo.y) * alto) / 2,
         },
+        enVista:
+          vectorCuerpo.z >= -1 &&
+          vectorCuerpo.z <= 1 &&
+          vectorCuerpo.x >= -1 &&
+          vectorCuerpo.x <= 1 &&
+          vectorCuerpo.y >= -1 &&
+          vectorCuerpo.y <= 1,
         etiqueta: {
           x: ((vectorEtiqueta.x + 1) * ancho) / 2,
           y: ((1 - vectorEtiqueta.y) * alto) / 2,
         },
-        mallas: nombresMallas.map((nombre, indiceMalla) => {
-          const malla = mallasPersonas[indiceMalla];
-          const indicesInstancia =
-            indiceMalla === 2 ? [indice * 2, indice * 2 + 1] : [indice];
-          const transformaciones = indicesInstancia.map((indiceInstancia) => {
-            const matriz = new THREE.Matrix4();
-            const posicionDescompuesta = new THREE.Vector3();
-            const escala = new THREE.Vector3();
-            if (malla) {
-              malla.getMatrixAt(indiceInstancia, matriz);
-              matriz.decompose(
-                posicionDescompuesta,
-                new THREE.Quaternion(),
-                escala,
-              );
-            }
-            return {
-              indice: indiceInstancia,
-              posicion: posicionDescompuesta.toArray(),
-              escala: escala.toArray(),
-              color: malla?.instanceColor
-                ? Array.from(
-                    malla.instanceColor.array.slice(
-                      indiceInstancia * 3,
-                      indiceInstancia * 3 + 3,
-                    ),
-                  )
-                : null,
-            };
-          });
-          return {
-            nombre,
-            count: malla?.count ?? 0,
-            visible: malla?.visible ?? false,
-            frustumCulled: malla?.frustumCulled ?? null,
-            boundingSphere: malla?.boundingSphere
-              ? {
-                  center: malla.boundingSphere.center.toArray(),
-                  radius: malla.boundingSphere.radius,
-                }
-              : null,
-            instanceMatrixVersion: malla?.instanceMatrix.version ?? null,
-            instanceColorVersion: malla?.instanceColor?.version ?? null,
-            instanceColorExiste: Boolean(malla?.instanceColor),
-            material: malla
-              ? {
-                  transparent: malla.material.transparent,
-                  opacity: malla.material.opacity,
-                  depthWrite: malla.material.depthWrite,
-                  depthTest: malla.material.depthTest,
-                  renderOrder: malla.renderOrder,
-                }
-              : null,
-            instancias: transformaciones,
-          };
-        }),
+        mallas: [
+          {
+            ...resumirMalla(mallaFiguras, "figuras"),
+            instancias: Array.from({ length: PARTES_POR_PERSONA }, (_, parte) =>
+              obtenerTransformacion(
+                mallaFiguras,
+                indice * PARTES_POR_PERSONA + parte,
+              ),
+            ),
+          },
+          {
+            ...resumirMalla(mallaAnillo, "anillo"),
+            instancias: [obtenerTransformacion(mallaAnillo, indice)],
+          },
+        ],
       };
     });
 
@@ -1046,34 +979,13 @@ export function crearLocal3D(contenedor) {
             )
         : "No disponible",
       render: { ...renderer.info.render },
+      geometriasRenderer: renderer.info.memory.geometries,
+      texturasRenderer: renderer.info.memory.textures,
       personasVisibles: frameActual.personas.length,
       cantidadIds: idsPersonas.length,
-      mallas: nombresMallas.map((nombre, indice) => ({
-        nombre,
-        count: mallasPersonas[indice]?.count ?? 0,
-        visible: mallasPersonas[indice]?.visible ?? false,
-        frustumCulled: mallasPersonas[indice]?.frustumCulled ?? null,
-        boundingSphere: mallasPersonas[indice]?.boundingSphere
-          ? {
-              center: mallasPersonas[indice].boundingSphere.center.toArray(),
-              radius: mallasPersonas[indice].boundingSphere.radius,
-            }
-          : null,
-        instanceMatrixVersion:
-          mallasPersonas[indice]?.instanceMatrix.version ?? null,
-        instanceColorVersion:
-          mallasPersonas[indice]?.instanceColor?.version ?? null,
-        instanceColorExiste: Boolean(mallasPersonas[indice]?.instanceColor),
-        material: mallasPersonas[indice]
-          ? {
-              transparent: mallasPersonas[indice].material.transparent,
-              opacity: mallasPersonas[indice].material.opacity,
-              depthWrite: mallasPersonas[indice].material.depthWrite,
-              depthTest: mallasPersonas[indice].material.depthTest,
-              renderOrder: mallasPersonas[indice].renderOrder,
-            }
-          : null,
-      })),
+      mallas: nombresMallas.map((nombre, indice) =>
+        resumirMalla(mallasPersonas[indice], nombre),
+      ),
       instancias,
     };
   }
@@ -1166,9 +1078,19 @@ export function crearLocal3D(contenedor) {
   if (diagnosticosActivados) {
     Object.defineProperty(contenedor, "__diagnosticoPersonas", {
       value: Object.assign(obtenerDiagnosticoPersonas, {
+        recargarEventos(eventos, tiempo) {
+          cargarEventos(eventos);
+          actualizarTiempo(tiempo);
+        },
         establecerRecortePersonas(activar) {
           for (const malla of mallasPersonas) {
             malla.frustumCulled = activar;
+          }
+          renderer.render(escena, camara.camara);
+        },
+        establecerVisibilidadPersonas(visible) {
+          for (const malla of mallasPersonas) {
+            malla.visible = visible;
           }
           renderer.render(escena, camara.camara);
         },

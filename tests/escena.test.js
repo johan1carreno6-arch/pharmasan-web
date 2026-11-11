@@ -7,8 +7,10 @@ import {
   requiereCalidadReducida,
 } from "../src/escena/local3d.js";
 import {
+  PARTES_POR_PERSONA,
   crearTransformacionesPersona,
   establecerInstanciaPersona,
+  obtenerColoresPersona,
 } from "../src/escena/instancias-personas.js";
 import * as THREE from "../vendor/three/three.module.js";
 
@@ -39,9 +41,10 @@ test("las instancias visibles conservan mallas, colores y posiciones alineadas",
       capacidad,
     );
   const mallas = [
-    crearMalla(new THREE.CylinderGeometry(0.22, 0.3, 0.78, 6), cantidad),
-    crearMalla(new THREE.IcosahedronGeometry(0.22, 0), cantidad),
-    crearMalla(new THREE.BoxGeometry(0.16, 0.42, 0.18), cantidad * 2),
+    crearMalla(
+      new THREE.IcosahedronGeometry(1, 0),
+      cantidad * PARTES_POR_PERSONA,
+    ),
     crearMalla(new THREE.RingGeometry(0.29, 0.37, 16), cantidad),
   ];
   const coloresAsignados = mallas.map(() => []);
@@ -54,26 +57,34 @@ test("las instancias visibles conservan mallas, colores y posiciones alineadas",
 
   for (let indice = 0; indice < cantidad; indice += 1) {
     const x = indice - 35;
-    const posicion = [x, 0, 0.43];
-    const partes = crearTransformacionesPersona(posicion);
-    const tono = indice % 2 === 0 ? 0x397d65 : 0xc07b43;
-    establecerInstanciaPersona(
-      objetoTemporal, mallas[0], indice, partes.cuerpo, tono,
-      coloresAsignados[0], obtenerColor,
-    );
-    establecerInstanciaPersona(
-      objetoTemporal, mallas[1], indice, partes.cabeza, 0xe5bd96,
-      coloresAsignados[1], obtenerColor,
-    );
-    partes.piernas.forEach((pierna, lado) =>
+    const persona = {
+      id: `Paciente ${indice + 1}`,
+      tipo: indice % 2 === 0 ? "General" : "Preferencial",
+      posicion: [x, 0, 0.43],
+      orientacion: 0,
+      caminando: indice % 3 === 0,
+      faseMarcha: indice / 4,
+    };
+    const partes = crearTransformacionesPersona(persona, 2);
+    const tonos = obtenerColoresPersona(persona.id, persona.tipo);
+    partes.slice(0, PARTES_POR_PERSONA).forEach((parte, indiceParte) =>
       establecerInstanciaPersona(
-        objetoTemporal, mallas[2], indice * 2 + lado, pierna, 0x34433d,
-        coloresAsignados[2], obtenerColor,
+        objetoTemporal,
+        mallas[0],
+        indice * PARTES_POR_PERSONA + indiceParte,
+        parte,
+        tonos[indiceParte],
+        coloresAsignados[0],
+        obtenerColor,
       ),
     );
     establecerInstanciaPersona(
-      objetoTemporal, mallas[3], indice, partes.anillo, 0x55a86a,
-      coloresAsignados[3], obtenerColor,
+      objetoTemporal,
+      mallas[1],
+      indice,
+      partes[PARTES_POR_PERSONA],
+      0x55a86a,
+      coloresAsignados[1], obtenerColor,
     );
   }
   for (const malla of mallas) {
@@ -81,37 +92,40 @@ test("las instancias visibles conservan mallas, colores y posiciones alineadas",
     malla.instanceColor.needsUpdate = true;
   }
 
-  assert.deepEqual(mallas.map((malla) => malla.count), [71, 71, 142, 71]);
+  assert.deepEqual(mallas.map((malla) => malla.count), [71 * 12, 71]);
   const matriz = new THREE.Matrix4();
   for (let indice = 0; indice < cantidad; indice += 1) {
-    mallas[0].getMatrixAt(indice, matriz);
-    const matrizCuerpo = matriz.clone();
+    const indiceCuerpo = indice * PARTES_POR_PERSONA;
+    mallas[0].getMatrixAt(indiceCuerpo, matriz);
+    const posicionCuerpo = new THREE.Vector3().setFromMatrixPosition(matriz);
     const posicion = [indice - 35, 0, 0.43];
-    const partes = crearTransformacionesPersona(posicion);
+    const persona = {
+      id: `Paciente ${indice + 1}`,
+      tipo: indice % 2 === 0 ? "General" : "Preferencial",
+      posicion,
+      caminando: indice % 3 === 0,
+      faseMarcha: indice / 4,
+    };
+    const partes = crearTransformacionesPersona(persona, 2);
     const matrizAnillo = new THREE.Matrix4();
-    mallas[3].getMatrixAt(indice, matrizAnillo);
-    const posicionCuerpo = new THREE.Vector3().setFromMatrixPosition(matrizCuerpo);
+    mallas[1].getMatrixAt(indice, matrizAnillo);
     const posicionAnillo = new THREE.Vector3().setFromMatrixPosition(matrizAnillo);
-    for (const [mallaIndice, instancia] of [
-      [0, indice],
-      [1, indice],
-      [2, indice * 2],
-      [2, indice * 2 + 1],
-      [3, indice],
-    ]) {
-      const instanciaMalla = mallas[mallaIndice];
-      instanciaMalla.getMatrixAt(instancia, matriz);
+    for (let parte = 0; parte < PARTES_POR_PERSONA; parte += 1) {
+      const instancia = indice * PARTES_POR_PERSONA + parte;
+      mallas[0].getMatrixAt(instancia, matriz);
       assert.ok([...matriz.elements].every(Number.isFinite));
-      const canales = instanciaMalla.instanceColor.array.slice(
+      const canales = mallas[0].instanceColor.array.slice(
         instancia * 3,
         instancia * 3 + 3,
       );
       assert.ok([...canales].every(Number.isFinite));
       assert.ok([...canales].some((canal) => canal > 0));
     }
+    mallas[1].getMatrixAt(indice, matriz);
+    assert.ok([...matriz.elements].every(Number.isFinite));
     assert.ok(posicionCuerpo.distanceTo(posicionAnillo) > 0);
     assert.ok(Math.abs(posicionCuerpo.x - posicionAnillo.x) < 1e-6);
     assert.ok(Math.abs(posicionCuerpo.z - posicionAnillo.z) < 1e-6);
-    assert.ok(partes.cuerpo.escala[1] > 1);
+    assert.ok(partes[0].escala[1] > partes[0].escala[0]);
   }
 });

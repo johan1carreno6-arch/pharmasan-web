@@ -1,5 +1,45 @@
 # Progreso
 
+## 2026-11-11 — Mejora la figura y la animación de las personas
+
+- **Figura y movimiento:** se reemplazaron las formas rígidas por una figura
+  low-poly redondeada con torso, cuello, cabeza y cabello, brazos, piernas,
+  zapatos y bastón para Preferencial. Piel, cabello y ropa varían de forma
+  determinista por identificador; General conserva el acento verde y
+  Preferencial el naranja. El balanceo se deriva de la distancia recorrida, y
+  la quietud/gesto de atención del estado y tiempo del evento.
+- **Rendimiento:** en Chromium headless con ANGLE/SwiftShader, a 1366×768 y con
+  semilla 20261111, se compararon tres muestras de corridas reproducibles con
+  71 y 300 pacientes. Antes/después: 71 pacientes **2, 1, 2 / 2, 1, 2 fps**
+  (media **1,67 / 1,67 fps**); 300 pacientes **3, 4, 4 / 4, 3, 3 fps**
+  (media **3,67 / 3,33 fps**, descenso del **9,1 %**). El entorno usa
+  renderizado por software y no representa una GPU física; no se promete
+  alcanzar 30 fps. Para contener el coste se usa geometría icosaédrica low-poly
+  y solo se dibujan las instancias activas.
+- **Recursos y pruebas de escena:** Playwright comprobó píxeles de personas en
+  **1366×768** y **390×844**, `count` coherente, matrices finitas, colores,
+  `frustumCulled=false` y veinte recargas. El máximo y valor final fue de
+  **40 geometrías/10 texturas** en escritorio y **36/8** en móvil, sin
+  crecimiento acumulado.
+- **Teoría:** la referencia M/M/c también se suprime si una configuración de
+  filas separadas mezcla ventanillas dedicadas y flexibles; ese sistema no
+  cumple la hipótesis de dos colas independientes.
+- **Pruebas:** `node --test`: **58 aprobadas, 0 fallidas**. Playwright aprobó
+  la escena en **1366×768** y **390×844**, verificó datos y Three.js bajo
+  `/pharmasan-web/` y comprobó veinte recargas en cada tamaño. Las pruebas de
+  replay mantienen **71 pacientes, 7 esperas y Wq = 0,155 min** en hora pico
+  y **131 pacientes** en jornada completa. Se generaron cinco capturas de la
+  corrida reproducible: entrada, fila de 60 personas, camino a ventanilla y
+  salida en escritorio, más la fila en móvil.
+- **Archivos:** `src/escena/instancias-personas.js`,
+  `src/escena/personas.js`, `src/escena/local3d.js`,
+  `src/ui/laboratorio.js`, `tests/personas.test.js`, `tests/escena.test.js`,
+  `tests/escena-browser.test.js`, `tests/laboratorio.test.js`,
+  `docs/PROGRESO.md` y `docs/DECISIONES.md`.
+- **Pendientes:** no se hizo push, por lo que GitHub Actions no tiene una nueva
+  ejecución remota de estos commits; su workflow sí quedó revisado y ejecuta
+  `npm ci`, instala Chromium y corre `node --test`.
+
 ## 2026-11-11 — Renombra a Simular aleatoriamente
 
 - **Hecho:** el título de la sección, su pestaña, la descripción accesible del
