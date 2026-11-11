@@ -9,11 +9,25 @@ test("calcula métricas por paciente, tiempo, ventanilla y grupo", () => {
     llegadas: {
       modo: "replay",
       pacientes: [
-        { id: "G1", tipo: "General", llegada_min: 0 },
-        { id: "G2", tipo: "General", llegada_min: 1 },
+        {
+          id: "G1",
+          tipo: "General",
+          llegada_min: 0,
+          inicio_min: 0,
+          atencion_min: 3,
+          ventanilla: 1,
+        },
+        {
+          id: "G2",
+          tipo: "General",
+          llegada_min: 1,
+          inicio_min: 3,
+          atencion_min: 3,
+          ventanilla: 1,
+        },
       ],
+      ventanilla_observada: true,
     },
-    atencion: { General: { dist: "constante", media: 3 } },
     semilla: 3,
     asignacion_libres: "primera_libre",
   });
@@ -31,6 +45,7 @@ test("calcula métricas por paciente, tiempo, ventanilla y grupo", () => {
   assert.equal(metricas.rho_global, 1);
   assert.equal(metricas.rho_por_ventanilla[1], 1);
   assert.equal(metricas.por_grupo.General.Wq, 1);
+  assert.equal(metricas.por_grupo.General.Lq, 1 / 3);
   assert.equal(metricas.P_esperar, 0.5);
   assert.equal(metricas.porcentaje_espera_mayor_tolerable, 50);
   assert.equal(metricas.cola_maxima, 1);

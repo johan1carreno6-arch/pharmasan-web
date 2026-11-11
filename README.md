@@ -37,13 +37,16 @@ Si ves una versión anterior después de un cambio, recarga sin caché con `Ctrl
 **Modo A, Datos observados.** Reproduce los 131 pacientes reales.
 Elige el día (Lunes, Martes, Viernes o Los tres) y el tramo (hora pico
 08:02–09:02 o jornada completa). «Reproducir lo observado» usa las llegadas,
-ventanillas y tiempos reales; «Volver a simular con las llegadas observadas»
-usa el motor con servicio Erlang y una semilla visible. En la hora pico con los
-tres días deben aparecer 71 pacientes, 7 que esperaron y Wq = 0,155 min.
+ventanillas y tiempos reales; «Volver a simular con las tasas observadas»
+estima tasas de llegada y medias de atención del pico y genera nuevas corridas
+con llegadas Poisson y servicio exponencial. La simulación aleatoria no compara
+sus resultados con la antigua referencia del simulador Python. En la hora pico
+con los tres días deben aparecer 71 pacientes, 7 que esperaron y Wq = 0,155 min.
 
-**Modo B, Laboratorio.** Permite definir ventanillas y a quién atiende cada una,
-llegadas (Poisson, intervalos, conteos, patrones observados o un CSV propio),
-tiempos de atención, política de la cola, criterio de desempeño y semilla.
+**Modo B, Laboratorio.** Permite definir tasas de llegada por grupo (Poisson),
+tiempos medios de atención por grupo (servicio exponencial), ventanillas y a
+quién atiende cada una, política de la cola, límite de pacientes o duración,
+criterio de desempeño, semilla y réplicas.
 Botones principales: «Simular y ver en 3D», «Correr réplicas», pestaña
 «Comparar» (hasta 4 escenarios con las mismas semillas), descargar o cargar la
 configuración en JSON y «Copiar enlace con esta configuración».

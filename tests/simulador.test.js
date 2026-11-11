@@ -13,8 +13,8 @@ function configuracionBase(llegadas, cambios = {}) {
     ],
     llegadas,
     atencion: {
-      General: { dist: "constante", media: 2 },
-      Preferencial: { dist: "constante", media: 2 },
+      General: { media: 2 },
+      Preferencial: { media: 2 },
     },
     disciplina: "FIFO",
     colas: "separadas",
@@ -24,7 +24,7 @@ function configuracionBase(llegadas, cambios = {}) {
   };
 }
 
-test("la simulación es reproducible con la misma semilla", () => {
+test("Poisson y servicio exponencial son reproducibles con la misma semilla", () => {
   const configuracion = configuracionBase(
     { modo: "poisson", tasas_por_minuto: { General: 0.4, Preferencial: 0.1 } },
     { horizonte_min: 30 },
@@ -36,7 +36,7 @@ test("la simulación es reproducible con la misma semilla", () => {
   );
 });
 
-test("atiende a todos, respeta las filas FIFO y no ocupa una ventanilla dos veces", () => {
+test("atiende a todos en orden FIFO sin ocupar una ventanilla dos veces", () => {
   const resultado = simular(
     configuracionBase(
       {
@@ -70,10 +70,6 @@ test("atiende a todos, respeta las filas FIFO y no ocupa una ventanilla dos vece
     resultado.pacientes.map((paciente) => paciente.id),
     ["G1", "G2", "G3", "G4"],
   );
-  assert.deepEqual(
-    resultado.pacientes.map((paciente) => paciente.inicio),
-    [0, 2, 4, 6],
-  );
 });
 
 test("fin de servicio ocurre antes que llegada en el mismo instante", () => {
@@ -82,9 +78,24 @@ test("fin de servicio ocurre antes que llegada en el mismo instante", () => {
       {
         modo: "replay",
         pacientes: [
-          { id: "G1", tipo: "General", llegada_min: 0 },
-          { id: "G2", tipo: "General", llegada_min: 2 },
+          {
+            id: "G1",
+            tipo: "General",
+            llegada_min: 0,
+            inicio_min: 0,
+            atencion_min: 2,
+            ventanilla: "G",
+          },
+          {
+            id: "G2",
+            tipo: "General",
+            llegada_min: 2,
+            inicio_min: 2,
+            atencion_min: 1,
+            ventanilla: "G",
+          },
         ],
+        ventanilla_observada: true,
       },
       {
         ventanillas: [{ id: "G", nombre: "General", atiende: ["General"] }],
@@ -99,91 +110,31 @@ test("fin de servicio ocurre antes que llegada en el mismo instante", () => {
   assert.equal(resultado.pacientes[1].espera, 0);
 });
 
-test("los modos conteos, intervalos y CSV producen llegadas válidas", () => {
-  const conteos = simular(
+test("solo acepta llegadas Poisson o replay exacto", () => {
+  const poisson = simular(
     configuracionBase(
-      {
-        modo: "conteos",
-        dia: "Lunes",
-        intervalos: [
-          { dia: "Lunes", tipo: "General", inicio_min: 0, fin_min: 5, llegadas: 3 },
-        ],
-      },
-      { horizonte_min: 5 },
-    ),
-  );
-  assert.equal(conteos.pacientes.length, 3);
-  assert.ok(conteos.pacientes.every((paciente) => paciente.llegada >= 0 && paciente.llegada < 5));
-
-  const intervalos = simular(
-    configuracionBase(
-      { modo: "intervalos", tiempos_entre_llegadas: { General: [2, 3] } },
+      { modo: "poisson", tasas_por_minuto: { General: 0.1, Preferencial: 0 } },
       { horizonte_min: 10 },
     ),
   );
-  assert.ok(intervalos.pacientes.every((paciente) => paciente.tipo === "General"));
-
-  const csv = simular(
-    configuracionBase(
-      {
-        modo: "csv",
-        contenido: 'id,tipo,llegada_min\n"G,1",General,1\nG2,General,2',
-      },
+  assert.ok(
+    poisson.pacientes.every(
+      (paciente) => Number.isFinite(paciente.atencion) && paciente.atencion > 0,
     ),
   );
-  assert.deepEqual(
-    csv.pacientes.map((paciente) => paciente.id),
-    ["G,1", "G2"],
-  );
-});
-
-test("el servicio indicado por fila CSV prevalece sobre la distribución", () => {
-  const resultado = simular(
-    configuracionBase(
-      {
-        modo: "csv",
-        pacientes: [
-          { id: "G1", tipo: "General", llegada_min: 0, atencion_min: 3 },
-          { id: "G2", tipo: "General", llegada_min: 0, atencion_min: 5 },
-        ],
-      },
-      {
-        ventanillas: [{ id: "G", nombre: "General", atiende: ["General"] }],
-        atencion: { General: { dist: "constante", media: 100 } },
-      },
-    ),
-  );
-  assert.deepEqual(
-    resultado.pacientes.map((paciente) => paciente.fin - paciente.inicio),
-    [3, 5],
-  );
-});
-
-test("los procesos sin fin requieren horizonte o cantidad de pacientes", () => {
-  const configuracion = configuracionBase({
-    modo: "poisson",
-    tasas_por_minuto: { General: 0.3 },
-  });
-  assert.throws(() => simular(configuracion), /requiere cantidad_pacientes o horizonte_min/);
   assert.throws(
     () =>
       simular(
         configuracionBase(
-          {
-            modo: "poisson",
-            tasas_por_minuto: {
-              General: Number.MAX_VALUE,
-              Preferencial: Number.MAX_VALUE,
-            },
-          },
-          { horizonte_min: 1 },
+          { modo: "no_soportado" },
+          { horizonte_min: 10 },
         ),
       ),
-    /tasa total de llegada debe ser finita/,
+    /Modo de llegadas desconocido/,
   );
 });
 
-test("replay observado conserva llegadas, ventanillas y tiempos registrados", async () => {
+test("replay observado conserva los 131 registros y las cifras de hora pico", async () => {
   const datos = JSON.parse(
     await readFile(new URL("../data/observados.json", import.meta.url), "utf8"),
   );
@@ -236,63 +187,20 @@ test("replay observado conserva llegadas, ventanillas y tiempos registrados", as
   assert.equal(pacientesPico.filter((paciente) => paciente.espera > 0).length, 7);
 });
 
-test("la configuración base de 500 réplicas se contrasta con referencia_python", async () => {
+test("la configuración base estima tasas y medias sin remuestrear el registro", async () => {
   const datos = JSON.parse(
     await readFile(new URL("../data/observados.json", import.meta.url), "utf8"),
   );
-  const referencia = datos.referencia_python.escenarios.find(
-    (escenario) => escenario.escenario === "base",
-  );
-  const { correrReplicas } = await import("../src/engine/replicas.js");
   const configuracion = crearConfiguracionBase(datos);
-  const resumen = correrReplicas(configuracion, 500);
 
-  assert.equal(resumen.semillas.length, 500);
-  assert.equal(configuracion.asignacion_libres, "aleatoria");
-  assert.equal(configuracion.llegadas.modo, "intervalos");
-  assert.equal(configuracion.llegadas.tiempos_entre_llegadas.General.length, 44);
-  assert.equal(
-    configuracion.llegadas.tiempos_entre_llegadas.Preferencial.length,
-    21,
-  );
-  assert.equal(configuracion.atencion.General.k, datos.atencion.General.erlang.forma);
-  assert.equal(
-    configuracion.atencion.Preferencial.k,
-    datos.atencion.Preferencial.erlang.forma,
-  );
+  assert.equal(configuracion.llegadas.modo, "poisson");
+  assert.equal(configuracion.llegadas.tasas_por_minuto.General, 47 / 60);
+  assert.equal(configuracion.llegadas.tasas_por_minuto.Preferencial, 24 / 60);
   for (const tipo of ["General", "Preferencial"]) {
-    assert.equal(configuracion.atencion[tipo].dist, "erlang");
-    assert.equal(
-      configuracion.atencion[tipo].media,
-      datos.atencion[tipo].erlang.forma / datos.atencion[tipo].erlang.tasa,
-    );
+    assert.deepEqual(configuracion.atencion[tipo], {
+      media: datos.atencion[tipo].media_min,
+    });
   }
-  assert.ok(
-    resumen.resumen.Wq.media >= referencia.wq_ic95_inferior &&
-      resumen.resumen.Wq.media <= referencia.wq_ic95_superior,
-    `Wq base=${resumen.resumen.Wq.media}; IC Python=[${referencia.wq_ic95_inferior}, ${referencia.wq_ic95_superior}]`,
-  );
-});
-
-test("las llegadas uniformes de conteos siguen disponibles con nombre explícito", () => {
-  const resultado = simular(
-    configuracionBase(
-      {
-        modo: "conteos_uniformes",
-        dia: "Lunes",
-        intervalos: [
-          { dia: "Lunes", tipo: "General", inicio_min: 0, fin_min: 5, llegadas: 3 },
-        ],
-      },
-      { horizonte_min: 5 },
-    ),
-  );
-  assert.equal(resultado.pacientes.length, 3);
-  assert.ok(
-    resultado.pacientes.every(
-      (paciente) => paciente.llegada >= 0 && paciente.llegada < 5,
-    ),
-  );
 });
 
 test("conteo de cola y compatibilidad de ventanillas compartidas", () => {
@@ -317,7 +225,8 @@ test("conteo de cola y compatibilidad de ventanillas compartidas", () => {
   const metricas = calcularMetricas(resultado);
   assert.equal(metricas.n, 3);
   assert.equal(metricas.cola_maxima, 2);
-  assert.equal(resultado.pacientes[0].inicio, 0);
-  assert.equal(resultado.pacientes.find((paciente) => paciente.id === "P1").inicio, 2);
-  assert.equal(resultado.pacientes.find((paciente) => paciente.id === "G2").inicio, 4);
+  assert.ok(
+    resultado.pacientes.find((paciente) => paciente.id === "G2").inicio <
+      resultado.pacientes.find((paciente) => paciente.id === "P1").inicio,
+  );
 });

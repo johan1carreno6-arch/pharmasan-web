@@ -9,62 +9,33 @@ export function crearConfiguracionBase(datos, semilla = datos?.meta?.semilla_usa
   }
 
   const idsPico = new Set(datos.pico);
-  const pacientesPico = datos.pacientes.filter((paciente) => idsPico.has(paciente.id));
+  const pacientesPico = datos.pacientes.filter((paciente) =>
+    idsPico.has(paciente.id),
+  );
   if (pacientesPico.length === 0) {
     throw new RangeError("No hay pacientes observados en el pico.");
   }
+  const inicioPico = Math.min(...pacientesPico.map((paciente) => paciente.llegada_min));
+  const finPico = Math.max(...pacientesPico.map((paciente) => paciente.llegada_min));
+  const duracionPicoMin = finPico - inicioPico;
+  if (!Number.isFinite(duracionPicoMin) || duracionPicoMin <= 0) {
+    throw new RangeError("El intervalo observado del pico debe tener duración positiva.");
+  }
 
-  const tiemposEntreLlegadas = Object.fromEntries(
-    TIPOS.map((tipo) => {
-      const intervalos = [];
-      const dias = [
-        ...new Set(
-          pacientesPico
-            .filter((paciente) => paciente.tipo === tipo)
-            .map((paciente) => paciente.dia),
-        ),
-      ];
-
-      for (const dia of dias) {
-        const tiempos = pacientesPico
-          .filter((paciente) => paciente.dia === dia && paciente.tipo === tipo)
-          .map((paciente) => paciente.llegada_min)
-          .sort((a, b) => a - b);
-        for (let indice = 1; indice < tiempos.length; indice += 1) {
-          const intervalo = tiempos[indice] - tiempos[indice - 1];
-          if (intervalo > 0) {
-            intervalos.push(intervalo);
-          }
-        }
-      }
-
-      if (intervalos.length === 0) {
-        throw new RangeError(`No hay interllegadas observadas para ${tipo}.`);
-      }
-      return [tipo, intervalos];
-    }),
+  const tasasPorHora = Object.fromEntries(
+    TIPOS.map((tipo) => [
+      tipo,
+      (pacientesPico.filter((paciente) => paciente.tipo === tipo).length * 60) /
+        duracionPicoMin,
+    ]),
   );
-
   const atencion = Object.fromEntries(
     TIPOS.map((tipo) => {
-      const erlang = datos.atencion?.[tipo]?.erlang;
-      if (
-        !erlang ||
-        !Number.isInteger(erlang.forma) ||
-        erlang.forma < 1 ||
-        !Number.isFinite(erlang.tasa) ||
-        erlang.tasa <= 0
-      ) {
-        throw new RangeError(`No hay un ajuste Erlang válido para ${tipo}.`);
+      const media = datos.atencion?.[tipo]?.media_min;
+      if (!Number.isFinite(media) || media <= 0) {
+        throw new RangeError(`Falta la media de atención observada para ${tipo}.`);
       }
-      return [
-        tipo,
-        {
-          dist: "erlang",
-          media: erlang.forma / erlang.tasa,
-          k: erlang.forma,
-        },
-      ];
+      return [tipo, { media }];
     }),
   );
 
@@ -75,8 +46,10 @@ export function crearConfiguracionBase(datos, semilla = datos?.meta?.semilla_usa
       { id: 3, nombre: "Ventanilla 3", atiende: ["Preferencial"] },
     ],
     llegadas: {
-      modo: "intervalos",
-      tiempos_entre_llegadas: tiemposEntreLlegadas,
+      modo: "poisson",
+      tasas_por_minuto: Object.fromEntries(
+        TIPOS.map((tipo) => [tipo, tasasPorHora[tipo] / 60]),
+      ),
     },
     atencion,
     disciplina: "FIFO",

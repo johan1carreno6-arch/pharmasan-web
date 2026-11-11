@@ -65,11 +65,16 @@ function validarConfiguracion(configuracion) {
   if (horizonte !== undefined && (!Number.isFinite(horizonte) || horizonte < 0)) {
     throw new RangeError("El horizonte debe ser finito y no negativo.");
   }
-  const requiereLimite =
-    configuracion.llegadas.modo === "poisson" ||
-    (configuracion.llegadas.modo === "intervalos" &&
-      !Array.isArray(configuracion.llegadas.tiempos_llegada));
-  if (requiereLimite && cantidad === undefined && horizonte === undefined) {
+  if (!["poisson", "replay"].includes(configuracion.llegadas.modo)) {
+    throw new RangeError(
+      `Modo de llegadas desconocido: ${configuracion.llegadas.modo}.`,
+    );
+  }
+  if (
+    configuracion.llegadas.modo === "poisson" &&
+    cantidad === undefined &&
+    horizonte === undefined
+  ) {
     throw new RangeError(
       "El modo de llegadas requiere cantidad_pacientes o horizonte_min para limitar la corrida.",
     );
@@ -79,10 +84,9 @@ function validarConfiguracion(configuracion) {
 
 function crearLlegadas(configuracion, aleatorio) {
   const parametros = configuracion.llegadas;
-  const modo = parametros.modo;
   let llegadas;
 
-  if (modo === "replay") {
+  if (parametros.modo === "replay") {
     const registros =
       parametros.pacientes ??
       parametros.replay ??
@@ -105,33 +109,45 @@ function crearLlegadas(configuracion, aleatorio) {
         _orden: indice,
         _registro: registro,
       }));
-  } else if (modo === "csv") {
-    if (Array.isArray(parametros.pacientes)) {
-      llegadas = parametros.pacientes.map((registro, indice) => ({
-        id: registro.id ?? `Paciente ${indice + 1}`,
-        tipo: registro.tipo,
-        llegada: registro.llegada ?? registro.llegada_min,
-        _atencion_csv: registro.atencion_min,
-        _orden: indice,
-        _registro: registro,
-      }));
-    } else if (typeof parametros.contenido === "string") {
-      llegadas = parsearCsvLlegadas(parametros.contenido).map((registro, indice) => ({
-        ...registro,
-        _orden: indice,
-        _registro: registro,
-      }));
-    } else {
-      throw new TypeError("El modo csv requiere el texto CSV en «contenido».");
+  } else if (parametros.modo === "poisson") {
+    const tasas = parametros.tasas_por_minuto;
+    if (!tasas || typeof tasas !== "object") {
+      throw new TypeError("Poisson requiere tasas por grupo.");
     }
-  } else if (modo === "conteos" || modo === "conteos_uniformes") {
-    llegadas = crearLlegadasPorConteos(parametros, aleatorio);
-  } else if (modo === "poisson") {
-    llegadas = crearLlegadasPoisson(parametros, configuracion, aleatorio);
-  } else if (modo === "intervalos") {
-    llegadas = crearLlegadasPorIntervalos(parametros, configuracion, aleatorio);
+    const tasaGeneral = tasas.General ?? 0;
+    const tasaPreferencial = tasas.Preferencial ?? 0;
+    if (
+      !Number.isFinite(tasaGeneral) ||
+      !Number.isFinite(tasaPreferencial) ||
+      tasaGeneral < 0 ||
+      tasaPreferencial < 0
+    ) {
+      throw new RangeError("Las tasas de llegada deben ser finitas y no negativas.");
+    }
+    const tasaTotal = tasaGeneral + tasaPreferencial;
+    if (!Number.isFinite(tasaTotal)) {
+      throw new RangeError("La tasa total de llegada debe ser finita.");
+    }
+    llegadas = [];
+    if (tasaTotal > 0) {
+      const limite = configuracion.horizonte_min ?? Infinity;
+      const cantidad = configuracion.cantidad_pacientes ?? Infinity;
+      let tiempo = 0;
+      while (llegadas.length < cantidad) {
+        tiempo -= Math.log(Math.max(aleatorio(), Number.MIN_VALUE)) / tasaTotal;
+        if (tiempo > limite) break;
+        llegadas.push({
+          tipo:
+            aleatorio() * tasaTotal < tasaGeneral
+              ? "General"
+              : "Preferencial",
+          llegada: tiempo,
+          _orden: llegadas.length,
+        });
+      }
+    }
   } else {
-    throw new RangeError(`Modo de llegadas desconocido: ${modo}.`);
+    throw new RangeError(`Modo de llegadas desconocido: ${parametros.modo}.`);
   }
 
   for (const paciente of llegadas) {
@@ -140,12 +156,6 @@ function crearLlegadas(configuracion, aleatorio) {
     }
     if (!Number.isFinite(paciente.llegada) || paciente.llegada < 0) {
       throw new RangeError("Cada llegada debe ser un tiempo finito no negativo.");
-    }
-    if (
-      paciente._atencion_csv !== undefined &&
-      (!Number.isFinite(paciente._atencion_csv) || paciente._atencion_csv <= 0)
-    ) {
-      throw new RangeError(`La duración de atención de ${paciente.id} no es válida.`);
     }
   }
 
@@ -163,249 +173,6 @@ function crearLlegadas(configuracion, aleatorio) {
     id: paciente.id ?? `Paciente ${indice + 1}`,
     _orden: indice,
   }));
-}
-
-function cantidadDeConteo(registro) {
-  const cantidad = registro.llegadas ?? registro.cantidad ?? registro.conteo;
-  if (!Number.isInteger(cantidad) || cantidad < 0) {
-    throw new RangeError("Cada intervalo de conteo requiere un entero no negativo.");
-  }
-  return cantidad;
-}
-
-function crearLlegadasPorConteos(parametros, aleatorio) {
-  const intervalos = parametros.intervalos ?? parametros.conteos;
-  if (!Array.isArray(intervalos)) {
-    throw new TypeError("El modo conteos requiere «intervalos» con cantidades observadas.");
-  }
-  const dias = [...new Set(intervalos.map((registro) => registro.dia).filter(Boolean))];
-  const dia = parametros.dia ?? (dias.length ? dias[Math.floor(aleatorio() * dias.length)] : undefined);
-  const seleccionados = intervalos.filter(
-    (registro) => dia === undefined || registro.dia === dia,
-  );
-  const pacientes = [];
-
-  for (const intervalo of seleccionados) {
-    const inicio = intervalo.inicio_min ?? intervalo.inicio;
-    const fin = intervalo.fin_min ?? intervalo.fin;
-    if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin <= inicio) {
-      throw new RangeError("Cada intervalo de conteo requiere inicio y fin válidos.");
-    }
-    const cantidad = cantidadDeConteo(intervalo);
-    for (let indice = 0; indice < cantidad; indice += 1) {
-      let tipo = intervalo.tipo;
-      if (tipo === undefined) {
-        const proporcion = parametros.proporcion_preferencial ?? 0.5;
-        if (!Number.isFinite(proporcion) || proporcion < 0 || proporcion > 1) {
-          throw new RangeError("La proporción preferencial debe estar entre cero y uno.");
-        }
-        tipo = aleatorio() < proporcion ? "Preferencial" : "General";
-      }
-      pacientes.push({
-        tipo,
-        llegada: inicio + aleatorio() * (fin - inicio),
-        dia,
-        _orden: pacientes.length,
-      });
-    }
-  }
-
-  return pacientes;
-}
-
-function tasasPorTipo(parametros) {
-  if (parametros.tasas_por_minuto) {
-    return parametros.tasas_por_minuto;
-  }
-  if (parametros.tasas) {
-    return parametros.tasas;
-  }
-  const total = parametros.tasa_por_minuto ?? parametros.lambda;
-  if (Number.isFinite(total)) {
-    const proporcion = parametros.proporcion_preferencial ?? 0.5;
-    if (!Number.isFinite(proporcion) || proporcion < 0 || proporcion > 1) {
-      throw new RangeError("La proporción preferencial debe estar entre cero y uno.");
-    }
-    return {
-      General: total * (1 - proporcion),
-      Preferencial: total * proporcion,
-    };
-  }
-  throw new TypeError("Poisson requiere tasas por grupo o una tasa total.");
-}
-
-function crearLlegadasPoisson(parametros, configuracion, aleatorio) {
-  const tasas = tasasPorTipo(parametros);
-  const tasaGeneral = tasas.General ?? 0;
-  const tasaPreferencial = tasas.Preferencial ?? 0;
-  if (
-    !Number.isFinite(tasaGeneral) ||
-    !Number.isFinite(tasaPreferencial) ||
-    tasaGeneral < 0 ||
-    tasaPreferencial < 0
-  ) {
-    throw new RangeError("Las tasas de llegada deben ser finitas y no negativas.");
-  }
-  const tasaTotal = tasaGeneral + tasaPreferencial;
-  if (!Number.isFinite(tasaTotal)) {
-    throw new RangeError("La tasa total de llegada debe ser finita.");
-  }
-  if (tasaTotal === 0) {
-    return [];
-  }
-
-  const limite = configuracion.horizonte_min ?? Infinity;
-  const cantidad = configuracion.cantidad_pacientes ?? Infinity;
-  const pacientes = [];
-  let tiempo = 0;
-
-  while (pacientes.length < cantidad) {
-    tiempo -= Math.log(Math.max(aleatorio(), Number.MIN_VALUE)) / tasaTotal;
-    if (tiempo > limite) {
-      break;
-    }
-    const tipo = aleatorio() * tasaTotal < tasaGeneral ? "General" : "Preferencial";
-    pacientes.push({ tipo, llegada: tiempo, _orden: pacientes.length });
-  }
-
-  return pacientes;
-}
-
-function crearLlegadasPorIntervalos(parametros, configuracion, aleatorio) {
-  if (Array.isArray(parametros.tiempos_llegada)) {
-    return parametros.tiempos_llegada.map((paciente, indice) =>
-      typeof paciente === "number"
-        ? {
-            tipo: tipoAleatorio(parametros, aleatorio),
-            llegada: paciente,
-            _orden: indice,
-          }
-        : { ...paciente, llegada: paciente.llegada ?? paciente.llegada_min, _orden: indice },
-    );
-  }
-
-  if (Array.isArray(parametros.intervalos_min)) {
-    const intervalos = parametros.intervalos_min;
-    if (
-      intervalos.length === 0 ||
-      intervalos.some((valor) => !Number.isFinite(valor) || valor < 0) ||
-      !intervalos.some((valor) => valor > 0)
-    ) {
-      throw new RangeError(
-        "Los intervalos globales deben ser finitos, no negativos y contener alguno positivo.",
-      );
-    }
-    const limite = configuracion.horizonte_min ?? Infinity;
-    const cantidad = configuracion.cantidad_pacientes ?? Infinity;
-    const pacientes = [];
-    let tiempo = 0;
-    while (pacientes.length < cantidad) {
-      tiempo += intervalos[Math.floor(aleatorio() * intervalos.length)];
-      if (tiempo >= limite) {
-        break;
-      }
-      pacientes.push({
-        tipo: tipoAleatorio(parametros, aleatorio),
-        llegada: tiempo,
-        _orden: pacientes.length,
-      });
-    }
-    return pacientes;
-  }
-
-  const valores =
-    parametros.por_grupo ??
-    parametros.tiempos_entre_llegadas ??
-    parametros.valores_por_grupo;
-  if (!valores || typeof valores !== "object") {
-    throw new TypeError(
-      "El modo intervalos requiere tiempos_llegada o tiempos_entre_llegadas por grupo.",
-    );
-  }
-  const limite = configuracion.horizonte_min ?? Infinity;
-  const cantidad = configuracion.cantidad_pacientes ?? Infinity;
-  const pacientes = [];
-
-  for (const tipo of TIPOS) {
-    const lista = valores[tipo] ?? [];
-    if (!Array.isArray(lista) || lista.some((valor) => !Number.isFinite(valor) || valor <= 0)) {
-      throw new RangeError(`Los intervalos entre llegadas de ${tipo} deben ser positivos.`);
-    }
-    let tiempo = 0;
-    let generadas = 0;
-    while (lista.length > 0 && generadas < cantidad) {
-      const intervalo = lista[Math.floor(aleatorio() * lista.length)];
-      tiempo += intervalo;
-      if (tiempo > limite) {
-        break;
-      }
-      pacientes.push({ tipo, llegada: tiempo, _orden: pacientes.length });
-      generadas += 1;
-    }
-  }
-
-  return pacientes;
-}
-
-function tipoAleatorio(parametros, aleatorio) {
-  const proporcion = parametros.proporcion_preferencial ?? 0.5;
-  if (!Number.isFinite(proporcion) || proporcion < 0 || proporcion > 1) {
-    throw new RangeError("La proporción preferencial debe estar entre cero y uno.");
-  }
-  return aleatorio() < proporcion ? "Preferencial" : "General";
-}
-
-export function parsearCsvLlegadas(texto) {
-  const filas = texto.trim().split(/\r?\n/).filter((fila) => fila.trim() !== "");
-  if (filas.length < 2) {
-    throw new RangeError("El CSV debe tener encabezado y al menos una llegada.");
-  }
-  const separarColumnas = (fila) => {
-    const columnas = [];
-    let valor = "";
-    let entreComillas = false;
-    for (let indice = 0; indice < fila.length; indice += 1) {
-      const caracter = fila[indice];
-      if (caracter === '"' && fila[indice + 1] === '"' && entreComillas) {
-        valor += '"';
-        indice += 1;
-      } else if (caracter === '"') {
-        entreComillas = !entreComillas;
-      } else if (caracter === "," && !entreComillas) {
-        columnas.push(valor.trim());
-        valor = "";
-      } else {
-        valor += caracter;
-      }
-    }
-    if (entreComillas) {
-      throw new RangeError("El CSV contiene una comilla sin cerrar.");
-    }
-    columnas.push(valor.trim());
-    return columnas;
-  };
-  const encabezados = separarColumnas(filas[0]).map((valor, indice) =>
-    indice === 0 ? valor.replace(/^\uFEFF/, "") : valor,
-  );
-  const indiceTipo = encabezados.indexOf("tipo");
-  const indiceLlegada = encabezados.indexOf("llegada_min");
-  const indiceId = encabezados.indexOf("id");
-  if (indiceTipo < 0 || indiceLlegada < 0) {
-    throw new RangeError("El CSV requiere las columnas tipo y llegada_min.");
-  }
-
-  return filas.slice(1).map((fila, indice) => {
-    const columnas = separarColumnas(fila);
-    const llegada = Number(columnas[indiceLlegada]);
-    if (!Number.isFinite(llegada)) {
-      throw new RangeError(`Llegada CSV no válida en la fila ${indice + 2}.`);
-    }
-    return {
-      id: indiceId < 0 ? undefined : columnas[indiceId],
-      tipo: columnas[indiceTipo],
-      llegada,
-    };
-  });
 }
 
 function ordenarFila(a, b, disciplina) {
@@ -440,19 +207,18 @@ function seleccionarDeFila(
   tiempo,
   compartida,
 ) {
-  for (const tipo of ventanilla.atiende) {
-    const filaOrigen = compartida ? filas : filas[tipo];
-    const fila = filaOrigen.filter(
+  const cola = compartida
+    ? filas
+    : ventanilla.atiende.flatMap((tipo) => filas[tipo]);
+  const candidatos = cola
+    .filter(
       (paciente) =>
-        paciente.tipo === tipo &&
+        ventanilla.atiende.includes(paciente.tipo) &&
         (!esObservada ||
           String(paciente._ventanilla_observada) === String(ventanilla.id)),
-    );
-    fila.sort((a, b) => ordenarFila(a, b, disciplina));
-    const paciente = fila[0];
-    if (!paciente) {
-      continue;
-    }
+    )
+    .sort((a, b) => ordenarFila(a, b, disciplina));
+  for (const paciente of candidatos) {
     if (esObservada && paciente._inicio_observado > tiempo) {
       continue;
     }
@@ -461,6 +227,7 @@ function seleccionarDeFila(
         `El inicio observado de ${paciente.id} precede la liberación de su ventanilla.`,
       );
     }
+    const filaOrigen = compartida ? filas : filas[paciente.tipo];
     filaOrigen.splice(filaOrigen.indexOf(paciente), 1);
     return paciente;
   }
@@ -494,7 +261,7 @@ export function simular(configuracion) {
       return [
         tipo,
         parametros
-          ? crearGeneradorServicio(parametros.dist, parametros, aleatoriosServicio[tipo])
+            ? crearGeneradorServicio(parametros.media, aleatoriosServicio[tipo])
           : undefined,
       ];
     }),
@@ -539,7 +306,7 @@ export function simular(configuracion) {
     const inicio = esObservada ? paciente._inicio_observado : tiempo;
     const servicio = esObservada
       ? paciente._atencion_observada
-      : (paciente._atencion_csv ?? generadoresServicio[paciente.tipo]?.());
+      : generadoresServicio[paciente.tipo]?.();
     if (!Number.isFinite(servicio) || servicio <= 0) {
       throw new RangeError(`La duración de servicio de ${paciente.id} no es válida.`);
     }

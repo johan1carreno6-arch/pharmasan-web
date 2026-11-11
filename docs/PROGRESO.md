@@ -1,5 +1,38 @@
 # Progreso
 
+## 2026-11-11 — Deja solo llegadas Poisson y servicio exponencial
+
+- **Modelo:** el laboratorio y la simulación aleatoria del pico ahora usan
+  únicamente llegadas Poisson por grupo y servicio exponencial. Las tasas
+  predeterminadas se calculan desde el pico observado: **47 General/h** y
+  **24 Preferencial/h**; las medias de servicio calculadas desde el JSON son
+  **4,1236 min** y **5,0238 min**, respectivamente. Se retiraron los modos
+  adicionales de llegadas, distribuciones de servicio y carga CSV propia.
+- **Datos observados:** la reproducción exacta permanece separada y mantiene
+  **131 pacientes** en la jornada completa y **71 pacientes, 7 esperas,
+  Wq = 0,155 min** en la hora pico. «Volver a simular» genera ahora datos
+  aleatorios con tasas estimadas; ya no compara con la referencia Python del
+  modelo Erlang anterior.
+- **Resultados teóricos:** el panel presenta Wq y Lq simulados, teóricos y sus
+  diferencias en escenarios M/M/c estables y compatibles con las hipótesis.
+  Las pruebas M/M/1 y M/M/2 cotejan ambos indicadores con las fórmulas
+  analíticas. La advertencia de inestabilidad permite ejecutar la simulación.
+- **Configuración:** JSON y hash pasan a versión **2**; las configuraciones
+  anteriores o con campos retirados muestran un aviso y cargan valores
+  predeterminados derivados de las observaciones.
+- **Pruebas:** `node --test`: **55 aprobadas, 0 fallidas**. Playwright verificó
+  el panel teórico y la escena en **1366×768** y **390×844**. La prueba de replay
+  confirma las cifras de pico y la preservación de los 131 registros.
+- **Archivos:** `index.html`, `README.md`, `src/engine/distribuciones.js`,
+  `src/engine/metricas.js`, `src/engine/replicas-worker.js`,
+  `src/engine/simulador.js`, `src/engine/teoria.js`, `src/ui/app.js`,
+  `src/ui/laboratorio.js`, `src/ui/observados.js`, pruebas de motor,
+  laboratorio, métricas, réplicas, worker, teoría y escena, además de
+  `docs/PROGRESO.md` y `docs/DECISIONES.md`.
+- **Pendientes:** no se hizo push ni se verificó una ejecución remota de GitHub
+  Actions; faltan las verificaciones finales bajo `/pharmasan-web/` y las
+  correcciones visuales restantes del encargo.
+
 ## 2026-11-11 — Anima el recorrido completo de los pacientes
 
 - **Hecho:** cada paciente aparece en el exterior, cruza la puerta, llega a

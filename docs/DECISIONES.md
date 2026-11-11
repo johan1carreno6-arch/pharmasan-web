@@ -1,5 +1,25 @@
 # Decisiones
 
+- El laboratorio aleatorio utiliza únicamente llegadas Poisson independientes
+  por grupo y servicio exponencial; las entradas son tasas por hora y tiempos
+  medios, estimados del pico de `data/observados.json` (47 General/h y 24
+  Preferencial/h). «Volver a simular con las tasas observadas» significa
+  estimar esos parámetros y generar una corrida aleatoria, no reproducir las
+  llegadas reales. La reproducción exacta permanece separada y conserva los
+  131 registros, incluidos los 71 pacientes, 7 esperas y Wq = 0,155 min de la
+  hora pico. Ya no se compara el resultado aleatorio con la referencia Python
+  del modelo anterior, porque aquella usaba llegadas y servicio distintos.
+- Los archivos de configuración y enlaces usan la versión 2. Una versión
+  anterior o un objeto con campos retirados se descarta con aviso en español y
+  se carga el preajuste derivado de los datos; no se reinterpretan parámetros
+  de otro modelo. El CSV de entrada se retiró porque no era estimación de tasas
+  ni reproducción exacta; se conserva el CSV de salida para exportar replay.
+- La referencia analítica M/M/c se muestra solo si el sistema es estable y sus
+  hipótesis corresponden al escenario: filas separadas con servidores
+  dedicados por grupo, o fila compartida con servicio homogéneo. En cualquier
+  configuración distinta se evita presentar una aproximación como fórmula
+  exacta. La comparación estadística M/M/1 y M/M/2 se valida contra sus
+  fórmulas analíticas, no contra el antiguo ajuste Python.
 - Las rutas visuales de los pacientes se construyen una sola vez desde los
   estados y tiempos del motor, y el fotograma se calcula directamente para el
   instante solicitado. Se limita la velocidad a **28 unidades de escena por

@@ -20,8 +20,8 @@ function configuracionBase() {
       tasas_por_minuto: { General: 0.3, Preferencial: 0.1 },
     },
     atencion: {
-      General: { dist: "exponencial", media: 2 },
-      Preferencial: { dist: "exponencial", media: 2.5 },
+      General: { media: 2 },
+      Preferencial: { media: 2.5 },
     },
     horizonte_min: 40,
     cantidad_pacientes: 500,
@@ -123,22 +123,30 @@ test("la comparación reutiliza semillas y barre once factores de demanda", asyn
   );
 });
 
-test("el barrido duplica tasas y acorta intervalos sin mutar el original", () => {
+test("el barrido duplica las tasas Poisson sin mutar el original", () => {
   const original = {
     semilla: 10,
     llegadas: {
-      modo: "intervalos",
-      tiempos_entre_llegadas: { General: [2, 4], Preferencial: [6] },
+      modo: "poisson",
+      tasas_por_minuto: { General: 0.2, Preferencial: 0.1 },
     },
   };
   const escalada = escalarConfiguracionDemanda(original, 2);
 
-  assert.deepEqual(escalada.llegadas.tiempos_entre_llegadas, {
-    General: [1, 2],
-    Preferencial: [3],
+  assert.deepEqual(escalada.llegadas.tasas_por_minuto, {
+    General: 0.4,
+    Preferencial: 0.2,
   });
-  assert.deepEqual(original.llegadas.tiempos_entre_llegadas, {
-    General: [2, 4],
-    Preferencial: [6],
+  assert.deepEqual(original.llegadas.tasas_por_minuto, {
+    General: 0.2,
+    Preferencial: 0.1,
   });
+  assert.throws(
+    () =>
+      escalarConfiguracionDemanda(
+        { llegadas: { modo: "no_soportado" } },
+        2,
+      ),
+    /requiere tasas Poisson/,
+  );
 });

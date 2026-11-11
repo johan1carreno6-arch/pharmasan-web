@@ -159,9 +159,9 @@
         </section>
 
         <section class="panel" aria-labelledby="titulo-simulacion">
-          <h2 id="titulo-simulacion">Caso base simulado</h2>
+          <h2 id="titulo-simulacion">Simulación aleatoria del pico</h2>
           <button id="simular-observados" type="button" disabled>
-            Volver a simular con las llegadas observadas
+            Volver a simular con las tasas observadas
           </button>
           <p id="estado" class="estado" role="status" aria-live="polite">
             Cargando datos observados…
@@ -169,10 +169,9 @@
           <div id="resultados" class="resultados-base" hidden>
             <dl class="medidas">
               <div><dt>Wq simulado</dt><dd id="wq-simulado">—</dd></div>
-              <div><dt>Wq referencia Python</dt><dd id="wq-referencia">—</dd></div>
-              <div><dt>IC 95 % Python</dt><dd id="ic-referencia">—</dd></div>
+              <div><dt>IC 95 % de Wq simulado</dt><dd id="ic-wq-simulado">—</dd></div>
             </dl>
-            <p id="comparacion" class="comparacion" role="status" aria-live="polite"></p>
+            <p>Modelo Poisson/exponencial con tasas estimadas del pico observado; no es una reproducción de las llegadas reales.</p>
           </div>
         </section>
 
@@ -218,7 +217,7 @@
                   <option>Una sola cola compartida</option>
                   <option>Cuarta ventanilla</option>
                 </select>
-                <small>Parte de una distribución común y luego ajústala.</small>
+                <small>Parte de esta configuración y luego ajústala.</small>
               </label>
               <button id="aplicar-preajuste" type="button">Aplicar preajuste</button>
               <div id="laboratorio-ventanillas" class="lista-ventanillas"></div>
@@ -226,20 +225,9 @@
             </fieldset>
 
             <fieldset>
-              <legend>Llegadas y demanda</legend>
-              <label class="campo-laboratorio" for="modo-llegadas">
-                <span>Cómo llegan</span>
-                <select id="modo-llegadas" name="modoLlegadas">
-                  <option value="observados">Patrones observados remuestreados</option>
-                  <option value="poisson">Tasa por hora de cada grupo (Poisson)</option>
-                  <option value="intervalo_fijo">Tiempo entre llegadas fijo</option>
-                  <option value="intervalo_normal">Media y desviación entre llegadas</option>
-                  <option value="conteos">Conteos por intervalo observado de 5 min</option>
-                  <option value="datos_propios">Datos propios (CSV)</option>
-                </select>
-                <small>Define el mecanismo que genera las llegadas.</small>
-              </label>
-              <div data-modo-llegada="poisson" class="bloque-laboratorio" hidden>
+              <legend>Proceso de llegadas</legend>
+              <p class="ayuda">Las llegadas siguen un proceso de Poisson independiente por grupo.</p>
+              <div class="bloque-laboratorio">
                 <label class="campo-laboratorio" for="tasa-general">
                   <span>Tasa General (pacientes/h)</span>
                   <input id="tasa-general" name="tasaGeneralHora" type="number" min="0" max="3000" step="any">
@@ -250,49 +238,6 @@
                   <input id="tasa-preferencial" name="tasaPreferencialHora" type="number" min="0" max="3000" step="any">
                   <small>Número promedio de llegadas preferenciales por hora.</small>
                 </label>
-              </div>
-              <div data-modo-llegada="intervalo_fijo intervalo_normal" class="bloque-laboratorio" hidden>
-                <label class="campo-laboratorio" for="intervalo-media">
-                  <span>Media entre llegadas (min)</span>
-                  <input id="intervalo-media" name="intervaloMedia" type="number" min="0.001" max="10000" step="any">
-                  <small>Tiempo típico entre dos pacientes.</small>
-                </label>
-                <label class="campo-laboratorio" for="intervalo-desviacion" data-modo-llegada="intervalo_normal" hidden>
-                  <span>Desviación del intervalo (min)</span>
-                  <input id="intervalo-desviacion" name="intervaloDesviacion" type="number" min="0" max="10000" step="any">
-                  <small>Variabilidad alrededor de la media; valores no positivos se vuelven a sortear.</small>
-                </label>
-              </div>
-              <div data-modo-llegada="conteos" class="bloque-laboratorio" hidden>
-                <label id="ayuda-conteos-dia" class="campo-laboratorio" for="dia-conteos" hidden>
-                  <span>Día de los conteos</span>
-                  <select id="dia-conteos" name="diaConteos">
-                    <option value="Lunes">Lunes</option>
-                    <option value="Martes">Martes</option>
-                    <option value="Viernes">Viernes</option>
-                  </select>
-                  <small>Elige qué día observado usar como punto de partida.</small>
-                </label>
-                <div id="ayuda-conteos-tabla" hidden>
-                  <p class="ayuda">Edita el conteo del grupo y tramo que corresponda.</p>
-                  <div id="tabla-conteos-laboratorio" class="tabla-desplazable"></div>
-                </div>
-              </div>
-              <div data-modo-llegada="datos_propios" class="bloque-laboratorio" hidden>
-                <label class="campo-laboratorio" for="csv-datos-propios">
-                  <span>Pega datos CSV</span>
-                  <textarea id="csv-datos-propios" name="contenidoDatosPropios" rows="7" spellcheck="false"></textarea>
-                  <small>
-                    Requiere llegada_min y tipo; atencion_min es opcional.
-                    También acepta el CSV descargado desde esta app.
-                  </small>
-                </label>
-                <label class="campo-laboratorio" for="archivo-csv-propio">
-                  <span>O selecciona un archivo CSV</span>
-                  <input id="archivo-csv-propio" type="file" accept=".csv,text/csv">
-                  <small>Se aceptan separadores coma o punto y coma.</small>
-                </label>
-                <p id="estado-csv-propio" class="estado" role="status" aria-live="polite"></p>
               </div>
               <div class="controles-replay">
                 <label for="modo-limite">Terminar al</label>
@@ -311,21 +256,11 @@
                 <input id="duracion-laboratorio" name="duracionMin" type="number" min="0.001" max="1440" step="any">
                 <small>Tiempo contado desde las 08:00, hasta 24 horas.</small>
               </label>
-              <label class="campo-laboratorio" for="proporcion-preferencial">
-                <span>Adultos mayores (%)</span>
-                <input id="proporcion-preferencial" name="proporcionPreferencial" type="number" min="0" max="100" step="any">
-                <small id="ayuda-proporcion">Fracción de las llegadas que serán de adultos mayores.</small>
-              </label>
-              <label class="campo-laboratorio" for="factor-demanda">
-                <span>Multiplicador de demanda</span>
-                <input id="factor-demanda" name="factorDemanda" type="number" min="0.1" max="10" step="0.1">
-                <small>1 conserva la demanda; 2 la duplica y 0,5 la reduce a la mitad.</small>
-              </label>
             </fieldset>
 
             <fieldset>
               <legend>Tiempos de atención</legend>
-              <p class="ayuda">Los promedios iniciales y los datos empíricos provienen de las observaciones exportadas.</p>
+              <p class="ayuda">El servicio es exponencial; las medias iniciales se estiman con las observaciones.</p>
               <div id="atencion-laboratorio" class="bloque-laboratorio"></div>
             </fieldset>
 

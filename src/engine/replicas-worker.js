@@ -31,96 +31,28 @@ export function escalarConfiguracionDemanda(configuracion, factor) {
   if (!Number.isFinite(factor) || factor < 1 || factor > 2) {
     throw new RangeError("El factor del barrido debe estar entre 1 y 2.");
   }
-  const copia = {
-    ...configuracion,
-    llegadas: { ...configuracion.llegadas },
-  };
-  const llegadas = copia.llegadas;
-  if (llegadas.modo === "poisson") {
-    const propiedad = llegadas.tasas_por_minuto ? "tasas_por_minuto" : "tasas";
-    if (llegadas[propiedad]) {
-      llegadas[propiedad] = Object.fromEntries(
-        Object.entries(llegadas[propiedad]).map(([tipo, tasa]) => [
-          tipo,
-          tasa * factor,
-        ]),
-      );
-    } else if (Number.isFinite(llegadas.tasa_por_minuto)) {
-      llegadas.tasa_por_minuto *= factor;
-    } else if (Number.isFinite(llegadas.lambda)) {
-      llegadas.lambda *= factor;
-    } else {
-      throw new TypeError("El escenario Poisson no contiene tasas escalables.");
-    }
-  } else if (
-    llegadas.modo === "intervalos" &&
-    llegadas.tiempos_entre_llegadas
+  const llegadas = configuracion?.llegadas;
+  if (
+    llegadas?.modo !== "poisson" ||
+    !llegadas.tasas_por_minuto ||
+    typeof llegadas.tasas_por_minuto !== "object"
   ) {
-    llegadas.tiempos_entre_llegadas = Object.fromEntries(
-      Object.entries(llegadas.tiempos_entre_llegadas).map(([tipo, intervalos]) => [
-        tipo,
-        intervalos.map((intervalo) => intervalo / factor),
-      ]),
-    );
-  } else if (
-    llegadas.modo === "intervalos" &&
-    Array.isArray(llegadas.tiempos_llegada)
-  ) {
-    llegadas.tiempos_llegada = llegadas.tiempos_llegada.map((paciente) =>
-      typeof paciente === "number"
-        ? paciente / factor
-        : {
-            ...paciente,
-            ...(paciente.llegada === undefined
-              ? { llegada_min: paciente.llegada_min / factor }
-              : { llegada: paciente.llegada / factor }),
-          },
-    );
-  } else if (
-    (llegadas.modo === "conteos" || llegadas.modo === "conteos_uniformes") &&
-    Array.isArray(llegadas.intervalos ?? llegadas.conteos)
-  ) {
-    const propiedad = llegadas.intervalos ? "intervalos" : "conteos";
-    const intervalos = llegadas[propiedad];
-    const escalados = intervalos.map((intervalo) => {
-      const exacto = (intervalo.llegadas ?? intervalo.cantidad ?? intervalo.conteo) * factor;
-      return { ...intervalo, cantidadEscalada: exacto };
-    });
-    const total = Math.round(
-      escalados.reduce((suma, intervalo) => suma + intervalo.cantidadEscalada, 0),
-    );
-    let restante = total;
-    const partes = escalados.map((intervalo, indice) => {
-      const cantidad = Math.floor(intervalo.cantidadEscalada);
-      restante -= cantidad;
-      return { ...intervalo, indice, cantidad };
-    });
-    [...partes]
-      .sort((primero, segundo) =>
-        (segundo.cantidadEscalada - Math.floor(segundo.cantidadEscalada)) -
-        (primero.cantidadEscalada - Math.floor(primero.cantidadEscalada)),
-      )
-      .slice(0, restante)
-      .forEach((intervalo) => (intervalo.cantidad += 1));
-    llegadas[propiedad] = partes.sort((primero, segundo) =>
-      primero.indice - segundo.indice,
-    ).map((intervalo) => {
-      const { cantidadEscalada, ...resto } = intervalo;
-      if ("llegadas" in resto) resto.llegadas = intervalo.cantidad;
-      else if ("cantidad" in resto) resto.cantidad = intervalo.cantidad;
-      else resto.conteo = intervalo.cantidad;
-      delete resto.indice;
-      return resto;
-    });
-  } else if (llegadas.modo === "csv" && Array.isArray(llegadas.pacientes)) {
-    llegadas.pacientes = llegadas.pacientes.map((paciente) => ({
-      ...paciente,
-      llegada: paciente.llegada / factor,
-    }));
-  } else {
-    throw new RangeError(`El modo de llegadas «${llegadas.modo}» no admite barrido.`);
+    throw new TypeError("El barrido de demanda requiere tasas Poisson por grupo.");
   }
-  return copia;
+  return {
+    ...configuracion,
+    llegadas: {
+      ...llegadas,
+      tasas_por_minuto: Object.fromEntries(
+        Object.entries(llegadas.tasas_por_minuto).map(([tipo, tasa]) => {
+          if (!Number.isFinite(tasa) || tasa < 0) {
+            throw new RangeError(`La tasa Poisson de ${tipo} no es válida.`);
+          }
+          return [tipo, tasa * factor];
+        }),
+      ),
+    },
+  };
 }
 
 export async function ejecutarTrabajoReplicas(

@@ -39,6 +39,11 @@ export function calcularMetricas(resultado, opciones = {}) {
   const ocupacion = new Map(
     (resultado.ventanillas ?? []).map((ventanilla) => [String(ventanilla.id), 0]),
   );
+  const colaPorGrupo = { General: 0, Preferencial: 0 };
+  const areaColaPorGrupo = { General: 0, Preferencial: 0 };
+  const tipoPorPaciente = new Map(
+    pacientes.map((paciente) => [String(paciente.id), paciente.tipo]),
+  );
   const pacienteEnServicio = new Map(
     (resultado.ventanillas ?? []).map((ventanilla) => [String(ventanilla.id), null]),
   );
@@ -48,6 +53,9 @@ export function calcularMetricas(resultado, opciones = {}) {
     const transcurrido = evento.tiempo - anterior;
     areaCola += cola * transcurrido;
     areaSistema += (cola + ocupadas) * transcurrido;
+    for (const tipo of Object.keys(colaPorGrupo)) {
+      areaColaPorGrupo[tipo] += colaPorGrupo[tipo] * transcurrido;
+    }
     for (const [id, paciente] of pacienteEnServicio) {
       if (paciente) {
         ocupacion.set(id, ocupacion.get(id) + transcurrido);
@@ -59,6 +67,12 @@ export function calcularMetricas(resultado, opciones = {}) {
       throw new TypeError("Cada evento debe registrar las filas y las ventanillas.");
     }
     cola = Object.values(estado.filas).reduce((suma, fila) => suma + fila.length, 0);
+    colaPorGrupo.General = 0;
+    colaPorGrupo.Preferencial = 0;
+    for (const id of Object.values(estado.filas).flat()) {
+      const tipo = tipoPorPaciente.get(String(id));
+      if (tipo in colaPorGrupo) colaPorGrupo[tipo] += 1;
+    }
     ocupadas = estado.ventanillas.filter((ventanilla) => ventanilla.ocupada).length;
     colaMaxima = Math.max(colaMaxima, cola);
     anterior = evento.tiempo;
@@ -74,6 +88,9 @@ export function calcularMetricas(resultado, opciones = {}) {
   const colaFinal = Math.max(0, duracion - anterior);
   areaCola += cola * colaFinal;
   areaSistema += (cola + ocupadas) * colaFinal;
+  for (const tipo of Object.keys(colaPorGrupo)) {
+    areaColaPorGrupo[tipo] += colaPorGrupo[tipo] * colaFinal;
+  }
   for (const [id, paciente] of pacienteEnServicio) {
     if (paciente) {
       ocupacion.set(id, ocupacion.get(id) + colaFinal);
@@ -105,6 +122,7 @@ export function calcularMetricas(resultado, opciones = {}) {
           n: grupo.length,
           Wq: promedio(grupo.map((paciente) => paciente.espera)),
           W: promedio(grupo.map((paciente) => paciente.fin - paciente.llegada)),
+          Lq: duracion > 0 ? areaColaPorGrupo[tipo] / duracion : 0,
           P_esperar:
             grupo.length === 0
               ? 0

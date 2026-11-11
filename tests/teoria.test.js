@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calcularMMs } from "./teoria.js";
+import { calcularMMc } from "../src/engine/teoria.js";
 import { correrReplicas } from "../src/engine/replicas.js";
 
 function configuracionMM(tasaLlegada, servidores, semilla) {
@@ -14,17 +14,17 @@ function configuracionMM(tasaLlegada, servidores, semilla) {
       modo: "poisson",
       tasas_por_minuto: { General: tasaLlegada },
     },
-    atencion: { General: { dist: "exponencial", media: 1 } },
+    atencion: { General: { media: 1 } },
     disciplina: "FIFO",
     colas: "separadas",
     asignacion_libres: "primera_libre",
-    horizonte_min: 12000,
+    cantidad_pacientes: 500,
     semilla,
   };
 }
 
 test("M/M/1 coincide con Wq y Lq analíticos dentro del IC 95 %", () => {
-  const teórico = calcularMMs(0.55, 1, 1);
+  const teórico = calcularMMc(0.55, 1, 1);
   const simulación = correrReplicas(configuracionMM(0.55, 1, 20261109), 60);
   assert.ok(
     simulación.resumen.Wq.ic95.inferior <= teórico.Wq &&
@@ -39,7 +39,7 @@ test("M/M/1 coincide con Wq y Lq analíticos dentro del IC 95 %", () => {
 });
 
 test("M/M/2 coincide con Wq y Lq analíticos dentro del IC 95 %", () => {
-  const teórico = calcularMMs(1.2, 1, 2);
+  const teórico = calcularMMc(1.2, 1, 2);
   const simulación = correrReplicas(configuracionMM(1.2, 2, 20261110), 60);
   assert.ok(
     simulación.resumen.Wq.ic95.inferior <= teórico.Wq &&

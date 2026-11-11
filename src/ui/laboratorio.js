@@ -1,194 +1,18 @@
 import { calcularMetricas } from "../engine/metricas.js";
-import { crearFlujoAleatorio } from "../engine/prng.js";
 import { crearClienteReplicasWorker } from "../engine/replicas-worker-client.js";
 import { simular } from "../engine/simulador.js";
-import { normalEstandar } from "../engine/distribuciones.js";
+import { calcularMMc } from "../engine/teoria.js";
 import { crearConfiguracionBase } from "./observados.js";
 
 const TIPOS = ["General", "Preferencial"];
 const MAXIMO_PACIENTES = 500;
 const MAXIMO_VENTANILLAS = 8;
-export const VERSION_CONFIGURACION_LABORATORIO = 1;
+export const VERSION_CONFIGURACION_LABORATORIO = 2;
 const formatoLocal = new Intl.NumberFormat("es-CO", {
   maximumFractionDigits: 3,
 });
-const DISTRIBUCIONES = [
-  ["empirica", "Empírica observada"],
-  ["erlang", "Erlang"],
-  ["exponencial", "Exponencial"],
-  ["normal_truncada", "Normal truncada"],
-  ["constante", "Constante"],
-];
-const MODOS_LLEGADA = [
-  ["observados", "Patrones observados remuestreados"],
-  ["poisson", "Tasa por hora de cada grupo (Poisson)"],
-  ["intervalo_fijo", "Tiempo entre llegadas fijo"],
-  ["intervalo_normal", "Tiempo entre llegadas con media y desviación"],
-  ["conteos", "Conteos observados por intervalo de 5 minutos"],
-  ["datos_propios", "Datos propios (CSV)"],
-];
-
-function dividirFilaCsv(fila, separador) {
-  const columnas = [];
-  let valor = "";
-  let entreComillas = false;
-  for (let indice = 0; indice < fila.length; indice += 1) {
-    const caracter = fila[indice];
-    if (caracter === '"' && entreComillas && fila[indice + 1] === '"') {
-      valor += '"';
-      indice += 1;
-    } else if (caracter === '"') {
-      entreComillas = !entreComillas;
-    } else if (caracter === separador && !entreComillas) {
-      columnas.push(valor.trim());
-      valor = "";
-    } else {
-      valor += caracter;
-    }
-  }
-  if (entreComillas) {
-    throw new RangeError("El CSV tiene una comilla sin cerrar.");
-  }
-  columnas.push(valor.trim());
-  return columnas;
-}
-
-function contarSeparadores(fila, separador) {
-  let cantidad = 0;
-  let entreComillas = false;
-  for (let indice = 0; indice < fila.length; indice += 1) {
-    if (fila[indice] === '"' && fila[indice + 1] === '"' && entreComillas) {
-      indice += 1;
-    } else if (fila[indice] === '"') {
-      entreComillas = !entreComillas;
-    } else if (fila[indice] === separador && !entreComillas) {
-      cantidad += 1;
-    }
-  }
-  return cantidad;
-}
-
-function normalizarEncabezado(valor) {
-  return valor
-    .replace(/^\uFEFF/, "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function numeroCsv(valor, separador, linea, campo, permitirVacio = false) {
-  const texto = valor.trim();
-  if (!texto && permitirVacio) return undefined;
-  const normalizado = separador === ";" ? texto.replace(",", ".") : texto;
-  const numero = Number(normalizado);
-  if (!texto || !Number.isFinite(numero)) {
-    throw new RangeError(`Línea ${linea}: «${campo}» debe ser un número válido.`);
-  }
-  return numero;
-}
-
-export function parsearCsvDatosPropios(texto) {
-  if (typeof texto !== "string" || texto.trim() === "") {
-    throw new RangeError("Pega o carga un CSV con encabezado y al menos una fila.");
-  }
-  const filas = texto.replace(/^\uFEFF/, "").split(/\r?\n/);
-  const encabezadoIndice = filas.findIndex((fila) => fila.trim() !== "");
-  const encabezado = filas[encabezadoIndice];
-  const separador =
-    contarSeparadores(encabezado, ";") > contarSeparadores(encabezado, ",")
-      ? ";"
-      : ",";
-  let nombres;
-  try {
-    nombres = dividirFilaCsv(encabezado, separador).map(normalizarEncabezado);
-  } catch (error) {
-    throw new RangeError(`Línea ${encabezadoIndice + 1}: ${error.message}`);
-  }
-  const buscar = (...opciones) =>
-    nombres.findIndex((nombre) => opciones.includes(nombre));
-  const indiceLlegada = buscar("llegada_min", "arrival_min", "llegada (min)");
-  const indiceTipo = buscar("tipo", "grupo");
-  const indiceAtencion = buscar("atencion_min", "attention_min", "atencion (min)");
-  const indiceId = buscar("id", "paciente");
-  if (indiceLlegada < 0 || indiceTipo < 0) {
-    throw new RangeError(
-      `Línea ${encabezadoIndice + 1}: faltan las columnas obligatorias llegada_min y tipo.`,
-    );
-  }
-  const registros = [];
-  for (let indice = encabezadoIndice + 1; indice < filas.length; indice += 1) {
-    if (filas[indice].trim() === "") continue;
-    const linea = indice + 1;
-    if (registros.length >= MAXIMO_PACIENTES) {
-      throw new RangeError(
-        `Línea ${linea}: el CSV no puede superar ${MAXIMO_PACIENTES} filas de pacientes.`,
-      );
-    }
-    let columnas;
-    try {
-      columnas = dividirFilaCsv(filas[indice], separador);
-    } catch (error) {
-      throw new RangeError(`Línea ${linea}: ${error.message}`);
-    }
-    if (columnas.length !== nombres.length) {
-      throw new RangeError(
-        `Línea ${linea}: hay ${columnas.length} columnas; se esperaban ${nombres.length}.`,
-      );
-    }
-    const llegada = numeroCsv(
-      columnas[indiceLlegada],
-      separador,
-      linea,
-      "llegada_min",
-    );
-    if (llegada < 0) {
-      throw new RangeError(`Línea ${linea}: «llegada_min» no puede ser negativa.`);
-    }
-    const tipoTexto = normalizarEncabezado(columnas[indiceTipo]);
-    const tipo =
-      tipoTexto === "general"
-        ? "General"
-        : ["preferencial", "adulto mayor", "adulto mayor preferencial"].includes(
-              tipoTexto,
-            )
-          ? "Preferencial"
-          : null;
-    if (!tipo) {
-      throw new RangeError(
-        `Línea ${linea}: tipo no reconocido «${columnas[indiceTipo]}»; usa General o Preferencial.`,
-      );
-    }
-    const atencion =
-      indiceAtencion < 0
-        ? undefined
-        : numeroCsv(
-            columnas[indiceAtencion],
-            separador,
-            linea,
-            "atencion_min",
-            true,
-          );
-    if (atencion !== undefined && atencion <= 0) {
-      throw new RangeError(`Línea ${linea}: «atencion_min» debe ser mayor que 0.`);
-    }
-    registros.push({
-      id:
-        indiceId < 0 || !columnas[indiceId]
-          ? `Paciente ${registros.length + 1}`
-          : columnas[indiceId],
-      tipo,
-      llegada,
-      ...(atencion === undefined ? {} : { atencion_min: atencion }),
-    });
-  }
-
-  if (registros.length === 0) {
-    throw new RangeError("El CSV debe incluir al menos una fila de pacientes.");
-  }
-  return registros;
-}
+const ADVERTENCIA_CONFIGURACION_ANTIGUA =
+  "La configuración contiene campos del formato anterior; se iniciaron los valores por defecto.";
 
 export function serializarConfiguracionLaboratorio(entrada, datos) {
   exigirDatos(datos);
@@ -196,19 +20,23 @@ export function serializarConfiguracionLaboratorio(entrada, datos) {
   if (validacion.errores.length) {
     throw new RangeError(validacion.errores[0].mensaje);
   }
-  const configuracion = { ...entrada };
-  const conteosBase = datos.llegadas.conteos_5_min;
-  if (
-    entrada.modoLlegadas !== "conteos" &&
-    JSON.stringify(entrada.conteos) === JSON.stringify(conteosBase)
-  ) {
-    delete configuracion.conteos;
-  }
   return JSON.stringify(
-    { version: VERSION_CONFIGURACION_LABORATORIO, configuracion },
+    { version: VERSION_CONFIGURACION_LABORATORIO, configuracion: entrada },
     null,
     2,
   );
+}
+
+function configuracionPorDefectoAntigua(datos) {
+  const configuracion = crearPreajusteLaboratorio(
+    "Actual (2 generales + 1 preferencial)",
+    datos,
+    datos.meta.semilla_usada,
+  );
+  Object.defineProperty(configuracion, "advertencia", {
+    value: ADVERTENCIA_CONFIGURACION_ANTIGUA,
+  });
+  return configuracion;
 }
 
 export function cargarConfiguracionLaboratorio(texto, datos) {
@@ -219,11 +47,13 @@ export function cargarConfiguracionLaboratorio(texto, datos) {
   } catch {
     throw new SyntaxError("El archivo de configuración no contiene JSON válido.");
   }
-  if (
-    !archivo ||
-    typeof archivo !== "object" ||
-    archivo.version !== VERSION_CONFIGURACION_LABORATORIO
-  ) {
+  if (!archivo || typeof archivo !== "object" || Array.isArray(archivo)) {
+    throw new TypeError("El archivo JSON debe contener una configuración.");
+  }
+  if (archivo.version === 1) {
+    return configuracionPorDefectoAntigua(datos);
+  }
+  if (archivo.version !== VERSION_CONFIGURACION_LABORATORIO) {
     throw new RangeError(
       `La versión de configuración no es compatible; se requiere la versión ${VERSION_CONFIGURACION_LABORATORIO}.`,
     );
@@ -232,13 +62,30 @@ export function cargarConfiguracionLaboratorio(texto, datos) {
   if (!entrada || typeof entrada !== "object" || Array.isArray(entrada)) {
     throw new TypeError("El JSON debe incluir un objeto «configuracion».");
   }
+  const camposEliminados = [
+    "contenidoDatosPropios",
+    "conteos",
+    "diaConteos",
+    "factorDemanda",
+    "intervaloDesviacion",
+    "intervaloMedia",
+    "proporcionPreferencial",
+  ];
+  const distribucionesEliminadas = Object.values(entrada.atencion ?? {}).some(
+    (parametros) =>
+      parametros &&
+      (parametros.dist !== undefined ||
+        parametros.sd !== undefined ||
+        parametros.k !== undefined),
+  );
   if (
-    !Object.prototype.hasOwnProperty.call(entrada, "conteos") &&
-    entrada.modoLlegadas !== "conteos"
+    Object.prototype.hasOwnProperty.call(entrada, "modoLlegadas") ||
+    camposEliminados.some((campo) =>
+      Object.prototype.hasOwnProperty.call(entrada, campo),
+    ) ||
+    distribucionesEliminadas
   ) {
-    entrada.conteos = datos.llegadas.conteos_5_min.map((intervalo) => ({
-      ...intervalo,
-    }));
+    return configuracionPorDefectoAntigua(datos);
   }
   const validacion = validarEntradaLaboratorio(entrada, datos);
   if (validacion.errores.length) {
@@ -265,47 +112,18 @@ export function leerHashConfiguracionLaboratorio(hash, datos) {
   return cargarConfiguracionLaboratorio(contenido, datos);
 }
 
-function promedio(valores) {
-  return valores.length
-    ? valores.reduce((suma, valor) => suma + valor, 0) / valores.length
-    : 0;
-}
-
 function exigirDatos(datos) {
   if (
     !datos ||
     !Array.isArray(datos.pacientes) ||
     !Array.isArray(datos.pico) ||
-    !Array.isArray(datos.llegadas?.conteos_5_min)
+    !datos.atencion ||
+    !Number.isInteger(datos.meta?.semilla_usada)
   ) {
     throw new TypeError(
-      "El laboratorio requiere datos observados con pico y conteos de cinco minutos.",
+      "El laboratorio requiere pacientes, pico, medias de atención y semilla observados.",
     );
   }
-}
-
-function intervalosObservadosPorGrupo(datos, semilla) {
-  return crearConfiguracionBase(datos, semilla).llegadas.tiempos_entre_llegadas;
-}
-
-function crearAtencionInicial(datos) {
-  return Object.fromEntries(
-    TIPOS.map((tipo) => {
-      const datosTipo = datos.atencion?.[tipo];
-      if (!datosTipo || !Array.isArray(datosTipo.valores_observados_min)) {
-        throw new RangeError(`Faltan tiempos de atención observados para ${tipo}.`);
-      }
-      return [
-        tipo,
-        {
-          dist: "erlang",
-          media: datosTipo.erlang.forma / datosTipo.erlang.tasa,
-          sd: datosTipo.desviacion_min,
-          k: datosTipo.erlang?.forma,
-        },
-      ];
-    }),
-  );
 }
 
 function crearConfiguracionVentanasPreajuste(nombre) {
@@ -343,35 +161,18 @@ export function crearPreajusteLaboratorio(nombre, datos, semilla) {
   if (!Number.isInteger(semilla)) {
     throw new TypeError("La semilla debe ser un número entero.");
   }
-  const pico = new Set(datos.pico);
-  const cantidadPreferencial = datos.pacientes.filter(
-    (paciente) => pico.has(paciente.id) && paciente.tipo === "Preferencial",
-  ).length;
-  const interllegadas = intervalosObservadosPorGrupo(datos, semilla);
-  const intervaloMedio = promedio(
-    TIPOS.flatMap((tipo) => interllegadas[tipo]),
-  );
+  const configuracionBase = crearConfiguracionBase(datos, semilla);
   return {
     nombre,
     ventanillas: crearConfiguracionVentanasPreajuste(nombre),
-    modoLlegadas: "observados",
-    contenidoDatosPropios: "",
     cantidadReplicas: 100,
-    tasaGeneralHora: 60 / promedio(interllegadas.General),
-    tasaPreferencialHora: 60 / promedio(interllegadas.Preferencial),
-    intervaloMedia: intervaloMedio,
-    intervaloDesviacion: 0,
+    tasaGeneralHora: configuracionBase.llegadas.tasas_por_minuto.General * 60,
+    tasaPreferencialHora:
+      configuracionBase.llegadas.tasas_por_minuto.Preferencial * 60,
     modoLimite: "duracion",
     cantidadPacientes: datos.pico.length,
     duracionMin: 60,
-    proporcionPreferencial:
-      datos.pico.length === 0 ? 0 : cantidadPreferencial / datos.pico.length,
-    factorDemanda: 1,
-    diaConteos: datos.llegadas.conteos_5_min[0]?.dia ?? "",
-    conteos: datos.llegadas.conteos_5_min.map((intervalo) => ({
-      ...intervalo,
-    })),
-    atencion: crearAtencionInicial(datos),
+    atencion: configuracionBase.atencion,
     disciplina: "FIFO",
     colas: nombre === "Una sola cola compartida" ? "compartida" : "separadas",
     asignacion_libres: "aleatoria",
@@ -390,94 +191,14 @@ function agregarError(errores, campo, mensaje) {
   errores.push({ campo, mensaje });
 }
 
-function tasaPorGrupo(entrada, datos) {
-  const factor = entrada.factorDemanda;
-  if (!numeroFinito(factor) || factor <= 0) {
-    return { General: 0, Preferencial: 0 };
-  }
-  if (entrada.modoLlegadas === "poisson") {
-    return {
-      General: (entrada.tasaGeneralHora * factor) / 60,
-      Preferencial: (entrada.tasaPreferencialHora * factor) / 60,
-    };
-  }
-  if (
-    ["intervalo_fijo", "intervalo_normal"].includes(entrada.modoLlegadas)
-  ) {
-    const total =
-      numeroFinito(entrada.intervaloMedia) && entrada.intervaloMedia > 0
-        ? factor / entrada.intervaloMedia
-        : 0;
-    return {
-      General: total * (1 - entrada.proporcionPreferencial),
-      Preferencial: total * entrada.proporcionPreferencial,
-    };
-  }
-  if (entrada.modoLlegadas === "conteos") {
-    const filas = entrada.conteos?.filter(
-      (fila) => fila.dia === entrada.diaConteos,
-    );
-    if (!filas?.length) return { General: 0, Preferencial: 0 };
-    const inicio = Math.min(...filas.map((fila) => fila.inicio_min));
-    const fin = Math.max(...filas.map((fila) => fila.fin_min));
-    const duracion = fin - inicio;
-    return Object.fromEntries(
-      TIPOS.map((tipo) => [
-        tipo,
-        duracion > 0
-          ? (filas
-              .filter((fila) => fila.tipo === tipo)
-              .reduce((suma, fila) => suma + fila.llegadas, 0) *
-              factor) /
-            duracion
-          : 0,
-      ]),
-    );
-  }
-  if (entrada.modoLlegadas === "datos_propios") {
-    try {
-      const pacientes = parsearCsvDatosPropios(entrada.contenidoDatosPropios);
-      const llegadaMinima = Math.min(...pacientes.map((paciente) => paciente.llegada));
-      const llegadaMaxima = Math.max(...pacientes.map((paciente) => paciente.llegada));
-      const duracion = Math.max(0, llegadaMaxima - llegadaMinima);
-      return Object.fromEntries(
-        TIPOS.map((tipo) => [
-          tipo,
-          duracion > 0
-            ? pacientes.filter((paciente) => paciente.tipo === tipo).length / duracion
-            : 0,
-        ]),
-      );
-    } catch {
-      return { General: 0, Preferencial: 0 };
-    }
-  }
-  if (entrada.modoLlegadas !== "observados") {
-    return { General: 0, Preferencial: 0 };
-  }
-  const intervalos = intervalosObservadosPorGrupo(datos, entrada.semilla);
+function tasaPorGrupo(entrada) {
   return Object.fromEntries(
-    TIPOS.map((tipo) => [
-      tipo,
-      intervalos[tipo].length ? factor / promedio(intervalos[tipo]) : 0,
-    ]),
+    TIPOS.map((tipo) => [tipo, entrada[`tasa${tipo}Hora`] / 60]),
   );
 }
 
-function mediaAtencion(entrada, datos, tipo) {
-  if (entrada.modoLlegadas === "datos_propios") {
-    const registros = parsearCsvDatosPropios(entrada.contenidoDatosPropios).filter(
-      (paciente) => paciente.tipo === tipo && paciente.atencion_min !== undefined,
-    );
-    if (registros.length) {
-      return promedio(registros.map((paciente) => paciente.atencion_min));
-    }
-  }
-  const parametros = entrada.atencion?.[tipo];
-  if (parametros?.dist === "empirica") {
-    return promedio(datos.atencion[tipo].valores_observados_min);
-  }
-  return parametros?.media ?? 0;
+function mediaAtencion(entrada, tipo) {
+  return entrada.atencion?.[tipo]?.media ?? 0;
 }
 
 export function validarEntradaLaboratorio(entrada, datos) {
@@ -502,24 +223,6 @@ export function validarEntradaLaboratorio(entrada, datos) {
   ) {
     agregarError(errores, "nombre_preajuste", "Selecciona un preajuste válido.");
   }
-  if (typeof entrada.contenidoDatosPropios !== "string") {
-    agregarError(
-      errores,
-      "contenidoDatosPropios",
-      "Los datos propios deben estar en formato de texto CSV.",
-    );
-  }
-  if (!Array.isArray(entrada.conteos)) {
-    agregarError(
-      errores,
-      "conteos",
-      "La configuración debe incluir los conteos observados.",
-    );
-  }
-  if (typeof entrada.diaConteos !== "string") {
-    agregarError(errores, "diaConteos", "El día de los conteos debe ser texto.");
-  }
-
   if (
     !Array.isArray(entrada.ventanillas) ||
     entrada.ventanillas.length < 1 ||
@@ -567,96 +270,29 @@ export function validarEntradaLaboratorio(entrada, datos) {
     }
   }
 
-  if (!MODOS_LLEGADA.some(([modo]) => modo === entrada.modoLlegadas)) {
-    agregarError(errores, "modoLlegadas", "Selecciona un modo de llegadas válido.");
-  }
-  if (entrada.modoLlegadas === "poisson") {
-    for (const [campo, valor] of [
-      ["tasaGeneralHora", entrada.tasaGeneralHora],
-      ["tasaPreferencialHora", entrada.tasaPreferencialHora],
-    ]) {
-      if (!numeroFinito(valor) || valor < 0 || valor > 3000) {
-        agregarError(
-          errores,
-          campo,
-          "La tasa debe estar entre 0 y 3.000 pacientes por hora.",
-        );
-      }
-    }
-    if (
-      numeroFinito(entrada.tasaGeneralHora) &&
-      numeroFinito(entrada.tasaPreferencialHora) &&
-      entrada.tasaGeneralHora + entrada.tasaPreferencialHora === 0
-    ) {
+  for (const [campo, valor] of [
+    ["tasaGeneralHora", entrada.tasaGeneralHora],
+    ["tasaPreferencialHora", entrada.tasaPreferencialHora],
+  ]) {
+    if (!numeroFinito(valor) || valor < 0 || valor > 3000) {
       agregarError(
         errores,
-        "tasaGeneralHora",
-        "Al menos un grupo debe tener tasa positiva.",
+        campo,
+        "La tasa debe estar entre 0 y 3.000 pacientes por hora.",
       );
     }
   }
-  if (["intervalo_fijo", "intervalo_normal"].includes(entrada.modoLlegadas)) {
-    if (
-      !numeroFinito(entrada.intervaloMedia) ||
-      entrada.intervaloMedia <= 0 ||
-      entrada.intervaloMedia > 10000
-    ) {
-      agregarError(
-        errores,
-        "intervaloMedia",
-        "La media entre llegadas debe ser mayor que 0 y no superar 10.000 min.",
-      );
-    }
-    if (
-      entrada.modoLlegadas === "intervalo_normal" &&
-      (!numeroFinito(entrada.intervaloDesviacion) ||
-        entrada.intervaloDesviacion < 0 ||
-        entrada.intervaloDesviacion > 10000)
-    ) {
-      agregarError(
-        errores,
-        "intervaloDesviacion",
-        "La desviación debe estar entre 0 y 10.000 min.",
-      );
-    }
-  }
-  if (entrada.modoLlegadas === "conteos") {
-    const filas = entrada.conteos?.filter(
-      (fila) => fila.dia === entrada.diaConteos,
+  if (
+    numeroFinito(entrada.tasaGeneralHora) &&
+    numeroFinito(entrada.tasaPreferencialHora) &&
+    entrada.tasaGeneralHora + entrada.tasaPreferencialHora === 0
+  ) {
+    agregarError(
+      errores,
+      "tasaGeneralHora",
+      "Al menos un grupo debe tener tasa positiva.",
     );
-    if (!filas?.length) {
-      agregarError(
-        errores,
-        "conteos",
-        "No hay intervalos observados para el día elegido.",
-      );
-    } else {
-      filas.forEach((fila, indice) => {
-        if (
-          !Number.isInteger(fila.llegadas) ||
-          fila.llegadas < 0 ||
-          !numeroFinito(fila.inicio_min) ||
-          !numeroFinito(fila.fin_min) ||
-          fila.fin_min <= fila.inicio_min ||
-          !TIPOS.includes(fila.tipo)
-        ) {
-          agregarError(
-            errores,
-            `conteos.${indice}`,
-            "Cada conteo debe ser entero no negativo y tener grupo e intervalo válidos.",
-          );
-        }
-      });
-    }
   }
-  if (entrada.modoLlegadas === "datos_propios") {
-    try {
-      parsearCsvDatosPropios(entrada.contenidoDatosPropios);
-    } catch (error) {
-      agregarError(errores, "contenidoDatosPropios", error.message);
-    }
-  }
-
   if (!["cantidad", "duracion"].includes(entrada.modoLimite)) {
     agregarError(errores, "modoLimite", "Elige limitar por pacientes o duración.");
   } else if (entrada.modoLimite === "cantidad") {
@@ -693,71 +329,21 @@ export function validarEntradaLaboratorio(entrada, datos) {
       "El número de réplicas debe ser un entero entre 1 y 1.000.",
     );
   }
-  if (
-    !numeroFinito(entrada.proporcionPreferencial) ||
-    entrada.proporcionPreferencial < 0 ||
-    entrada.proporcionPreferencial > 1
-  ) {
-    agregarError(
-      errores,
-      "proporcionPreferencial",
-      "La proporción de adultos mayores debe estar entre 0 % y 100 %.",
-    );
-  }
-  if (
-    !numeroFinito(entrada.factorDemanda) ||
-    entrada.factorDemanda < 0.1 ||
-    entrada.factorDemanda > 10
-  ) {
-    agregarError(
-      errores,
-      "factorDemanda",
-      "El factor de demanda debe estar entre 0,1 y 10.",
-    );
-  }
-
   for (const tipo of TIPOS) {
     const parametros = entrada.atencion?.[tipo];
-    if (!parametros || !DISTRIBUCIONES.some(([dist]) => dist === parametros.dist)) {
+    if (!parametros) {
       agregarError(
         errores,
-        `atencion.${tipo}.dist`,
-        `Elige una distribución de atención para ${tipo}.`,
+        `atencion.${tipo}.media`,
+        `Falta el tiempo medio de atención para ${tipo}.`,
       );
       continue;
     }
-    if (
-      parametros.dist !== "empirica" &&
-      (!numeroFinito(parametros.media) ||
-        parametros.media <= 0 ||
-        parametros.media > 1440)
-    ) {
+    if (!numeroFinito(parametros.media) || parametros.media <= 0 || parametros.media > 1440) {
       agregarError(
         errores,
         `atencion.${tipo}.media`,
         `La media de ${tipo} debe estar entre 0 y 1.440 min.`,
-      );
-    }
-    if (
-      parametros.dist === "normal_truncada" &&
-      (!numeroFinito(parametros.sd) ||
-        parametros.sd < 0 ||
-        parametros.sd > 1440)
-    ) {
-      agregarError(
-        errores,
-        `atencion.${tipo}.sd`,
-        `La desviación de ${tipo} debe estar entre 0 y 1.440 min.`,
-      );
-    }
-    if (
-      parametros.dist === "erlang" &&
-      (!Number.isInteger(parametros.k) || parametros.k < 1 || parametros.k > 1000)
-    ) {
-      agregarError(
-        errores,
-        `atencion.${tipo}.k`,
-        "La forma Erlang debe ser un entero entre 1 y 1.000.",
       );
     }
   }
@@ -810,16 +396,16 @@ export function validarEntradaLaboratorio(entrada, datos) {
 
   let rhoEstimado = 0;
   if (errores.length === 0 && datos) {
-    const tasas = tasaPorGrupo(entrada, datos);
+    const tasas = tasaPorGrupo(entrada);
     const cargaTotal = TIPOS.reduce(
-      (suma, tipo) => suma + tasas[tipo] * mediaAtencion(entrada, datos, tipo),
+      (suma, tipo) => suma + tasas[tipo] * mediaAtencion(entrada, tipo),
       0,
     );
     const cargaPorGrupo = TIPOS.map((tipo) => {
       const compatibles = entrada.ventanillas.filter((ventanilla) =>
         ventanilla.atiende.includes(tipo),
       ).length;
-      return (tasas[tipo] * mediaAtencion(entrada, datos, tipo)) / compatibles;
+      return (tasas[tipo] * mediaAtencion(entrada, tipo)) / compatibles;
     });
     rhoEstimado = Math.max(
       ...cargaPorGrupo,
@@ -852,125 +438,12 @@ function exigirEntradaValida(entrada, datos) {
   return validacion;
 }
 
-function crearLlegadasExplicitas(entrada) {
-  const aleatorioIntervalo = crearFlujoAleatorio(
-    entrada.semilla,
-    "laboratorio:intervalos",
-  );
-  const aleatorioTipo = crearFlujoAleatorio(
-    entrada.semilla,
-    "laboratorio:tipos",
-  );
-  const cantidadMaxima =
-    entrada.modoLimite === "cantidad"
-      ? entrada.cantidadPacientes
-      : MAXIMO_PACIENTES;
-  const llegadas = [];
-  let tiempo = 0;
-  while (llegadas.length < cantidadMaxima) {
-    let intervalo = entrada.intervaloMedia;
-    if (
-      entrada.modoLlegadas === "intervalo_normal" &&
-      entrada.intervaloDesviacion > 0
-    ) {
-      let intentos = 0;
-      do {
-        intervalo =
-          entrada.intervaloMedia +
-          entrada.intervaloDesviacion * normalEstandar(aleatorioIntervalo);
-        intentos += 1;
-        if (intentos > 1000) {
-          throw new RangeError(
-            "No fue posible generar un intervalo positivo; reduce la desviación o aumenta la media.",
-          );
-        }
-      } while (intervalo <= 0);
-    }
-    tiempo += intervalo / entrada.factorDemanda;
-    if (entrada.modoLimite === "duracion" && tiempo > entrada.duracionMin) {
-      break;
-    }
-    llegadas.push({
-      id: `Paciente ${llegadas.length + 1}`,
-      tipo:
-        aleatorioTipo() < entrada.proporcionPreferencial
-          ? "Preferencial"
-          : "General",
-      llegada: tiempo,
-    });
-  }
-  return llegadas;
-}
-
-function crearLlegadasLaboratorio(entrada, datos) {
-  if (entrada.modoLlegadas === "datos_propios") {
-    return {
-      modo: "csv",
-      pacientes: parsearCsvDatosPropios(entrada.contenidoDatosPropios).map(
-        (paciente) => ({
-          ...paciente,
-          llegada: paciente.llegada / entrada.factorDemanda,
-        }),
-      ),
-    };
-  }
-  if (entrada.modoLlegadas === "poisson") {
-    return {
-      modo: "poisson",
-      tasas_por_minuto: {
-        General: (entrada.tasaGeneralHora * entrada.factorDemanda) / 60,
-        Preferencial:
-          (entrada.tasaPreferencialHora * entrada.factorDemanda) / 60,
-      },
-    };
-  }
-  if (entrada.modoLlegadas === "observados") {
-    const llegadasBase = intervalosObservadosPorGrupo(datos, entrada.semilla);
-    return {
-      modo: "intervalos",
-      tiempos_entre_llegadas: Object.fromEntries(
-        TIPOS.map((tipo) => [
-          tipo,
-          llegadasBase[tipo].map(
-            (intervalo) => intervalo / entrada.factorDemanda,
-          ),
-        ]),
-      ),
-    };
-  }
-  if (entrada.modoLlegadas === "conteos") {
-    const filas = entrada.conteos
-      .filter((intervalo) => intervalo.dia === entrada.diaConteos)
-      .map((intervalo) => ({
-        ...intervalo,
-        demanda: intervalo.llegadas * entrada.factorDemanda,
-      }));
-    const total = filas.reduce((suma, fila) => suma + fila.demanda, 0);
-    const meta = Math.min(MAXIMO_PACIENTES, Math.round(total));
-    const escala = total > 0 ? meta / total : 0;
-    const partes = filas.map((fila) => {
-      const exacto = fila.demanda * escala;
-      const cantidad = Math.floor(exacto);
-      return { fila, cantidad, resto: exacto - cantidad };
-    });
-    const restante =
-      meta - partes.reduce((suma, parte) => suma + parte.cantidad, 0);
-    partes
-      .toSorted((a, b) => b.resto - a.resto)
-      .slice(0, restante)
-      .forEach((parte) => (parte.cantidad += 1));
-    return {
-      modo: "conteos",
-      dia: entrada.diaConteos,
-      intervalos: partes.map(({ fila, cantidad }) => ({
-        ...fila,
-        llegadas: cantidad,
-      })),
-    };
-  }
+function crearLlegadasLaboratorio(entrada) {
   return {
-    modo: "intervalos",
-    tiempos_llegada: crearLlegadasExplicitas(entrada),
+    modo: "poisson",
+    tasas_por_minuto: Object.fromEntries(
+      TIPOS.map((tipo) => [tipo, entrada[`tasa${tipo}Hora`] / 60]),
+    ),
   };
 }
 
@@ -983,29 +456,10 @@ export function crearConfiguracionLaboratorio(entrada, datos) {
       nombre: ventanilla.nombre.trim(),
       atiende: [...ventanilla.atiende],
     })),
-    llegadas: crearLlegadasLaboratorio(entrada, datos),
+    llegadas: crearLlegadasLaboratorio(entrada),
     atencion: Object.fromEntries(
       TIPOS.map((tipo) => {
-        const parametros = entrada.atencion[tipo];
-        if (parametros.dist === "empirica") {
-          return [
-            tipo,
-            {
-              dist: "empirica",
-              media: promedio(datos.atencion[tipo].valores_observados_min),
-              valores: [...datos.atencion[tipo].valores_observados_min],
-            },
-          ];
-        }
-        return [
-          tipo,
-          {
-            dist: parametros.dist,
-            media: parametros.media,
-            sd: parametros.sd,
-            k: parametros.k,
-          },
-        ];
+        return [tipo, { media: entrada.atencion[tipo].media }];
       }),
     ),
     disciplina: entrada.disciplina,
@@ -1069,11 +523,7 @@ function numero(formulario, nombre) {
   return control(formulario, nombre)?.valueAsNumber ?? Number.NaN;
 }
 
-function claveConteo(fila) {
-  return `${fila.dia}|${fila.tipo}|${fila.intervalo}`;
-}
-
-function leerEntrada(formulario, conteosBase = []) {
+function leerEntrada(formulario) {
   const ventanillas = [
     ...formulario.querySelectorAll(".ventanilla-laboratorio"),
   ].map((tarjeta) => {
@@ -1088,40 +538,19 @@ function leerEntrada(formulario, conteosBase = []) {
             : [orden],
     };
   });
-  const conteos = new Map(
-    conteosBase.map((fila) => [claveConteo(fila), { ...fila }]),
-  );
-  for (const campo of formulario.querySelectorAll("[data-conteo]")) {
-    const fila = JSON.parse(campo.dataset.conteo);
-    conteos.set(claveConteo(fila), { ...fila, llegadas: campo.valueAsNumber });
-  }
   return {
     nombre: control(formulario, "nombre_preajuste").value,
     ventanillas,
-    modoLlegadas: control(formulario, "modoLlegadas").value,
-    contenidoDatosPropios: control(formulario, "contenidoDatosPropios").value,
     cantidadReplicas: numero(formulario, "cantidadReplicas"),
     tasaGeneralHora: numero(formulario, "tasaGeneralHora"),
     tasaPreferencialHora: numero(formulario, "tasaPreferencialHora"),
-    intervaloMedia: numero(formulario, "intervaloMedia"),
-    intervaloDesviacion: numero(formulario, "intervaloDesviacion"),
     modoLimite: control(formulario, "modoLimite").value,
     cantidadPacientes: numero(formulario, "cantidadPacientes"),
     duracionMin: numero(formulario, "duracionMin"),
-    proporcionPreferencial:
-      numero(formulario, "proporcionPreferencial") / 100,
-    factorDemanda: numero(formulario, "factorDemanda"),
-    diaConteos: control(formulario, "diaConteos").value,
-    conteos: [...conteos.values()],
     atencion: Object.fromEntries(
       TIPOS.map((tipo) => [
         tipo,
-        {
-          dist: control(formulario, `atencion.${tipo}.dist`).value,
-          media: numero(formulario, `atencion.${tipo}.media`),
-          sd: numero(formulario, `atencion.${tipo}.sd`),
-          k: numero(formulario, `atencion.${tipo}.k`),
-        },
+        { media: numero(formulario, `atencion.${tipo}.media`) },
       ]),
     ),
     disciplina: control(formulario, "disciplina").value,
@@ -1195,52 +624,6 @@ function renderizarVentanillas(formulario, ventanillas) {
   }
 }
 
-function renderizarConteos(formulario, conteos, dia) {
-  const contenedor = formulario.querySelector("#tabla-conteos-laboratorio");
-  contenedor.replaceChildren();
-  const tabla = nodo("table");
-  tabla.append(
-    nodo("caption", {
-      texto: `Conteos observados de ${dia}; modifica los números para probar otro escenario.`,
-    }),
-  );
-  const cabeza = nodo("thead");
-  const filaCabeza = nodo("tr");
-  for (const texto of ["Hora", "Grupo", "Llegadas"]) {
-    filaCabeza.append(nodo("th", { scope: "col", texto }));
-  }
-  cabeza.append(filaCabeza);
-  const cuerpo = nodo("tbody");
-  for (const intervalo of conteos.filter((fila) => fila.dia === dia)) {
-    const fila = nodo("tr");
-    const celda = nodo("td");
-    const campo = nodo("input", {
-      type: "number",
-      min: "0",
-      max: String(MAXIMO_PACIENTES),
-      step: "1",
-      "data-conteo": "",
-    });
-    campo.value = String(intervalo.llegadas);
-    campo.dataset.conteo = JSON.stringify(intervalo);
-    campo.setAttribute(
-      "aria-label",
-      `${intervalo.etiqueta}, ${intervalo.tipo}`,
-    );
-    celda.append(campo);
-    fila.append(
-      nodo("td", { texto: intervalo.etiqueta }),
-      nodo("td", {
-        texto: intervalo.tipo === "Preferencial" ? "Adulto mayor" : "General",
-      }),
-      celda,
-    );
-    cuerpo.append(fila);
-  }
-  tabla.append(cabeza, cuerpo);
-  contenedor.append(tabla);
-}
-
 function renderizarAtencion(formulario, estado) {
   const contenedor = formulario.querySelector("#atencion-laboratorio");
   contenedor.replaceChildren();
@@ -1254,41 +637,14 @@ function renderizarAtencion(formulario, estado) {
         texto: tipo === "Preferencial" ? "Adulto mayor" : "General",
       }),
     );
-    const parametros = estado.atencion[tipo];
     tarjeta.append(
       entradaCampo(
-        "Distribución",
-        `atencion.${tipo}.dist`,
-        "select",
-        parametros.dist,
-        "Elige la forma de representar el tiempo de atención.",
-        {
-          opciones: DISTRIBUCIONES.map(([valor, texto]) => ({ valor, texto })),
-        },
-      ).envoltura,
-      entradaCampo(
-        "Media (min)",
+        "Tiempo medio de atención (min)",
         `atencion.${tipo}.media`,
         "number",
-        parametros.media,
-        "Tiempo promedio de atención.",
+        estado.atencion[tipo].media,
+        "El servicio se modela con distribución exponencial y esta media observada.",
         { min: 0.001, max: 1440 },
-      ).envoltura,
-      entradaCampo(
-        "Desviación (min)",
-        `atencion.${tipo}.sd`,
-        "number",
-        parametros.sd ?? 0,
-        "Cuánto varía la duración alrededor de la media.",
-        { min: 0, max: 1440 },
-      ).envoltura,
-      entradaCampo(
-        "Forma Erlang k",
-        `atencion.${tipo}.k`,
-        "number",
-        parametros.k ?? 1,
-        "Más etapas producen servicios menos variables.",
-        { min: 1, max: 1000, step: 1 },
       ).envoltura,
     );
     contenedor.append(tarjeta);
@@ -1297,19 +653,12 @@ function renderizarAtencion(formulario, estado) {
 
 function aplicarEstado(formulario, estado) {
   for (const [nombre, valor] of Object.entries({
-    modoLlegadas: estado.modoLlegadas,
-    contenidoDatosPropios: estado.contenidoDatosPropios ?? "",
     cantidadReplicas: estado.cantidadReplicas ?? 100,
     tasaGeneralHora: estado.tasaGeneralHora,
     tasaPreferencialHora: estado.tasaPreferencialHora,
-    intervaloMedia: estado.intervaloMedia,
-    intervaloDesviacion: estado.intervaloDesviacion,
     modoLimite: estado.modoLimite,
     cantidadPacientes: estado.cantidadPacientes,
     duracionMin: estado.duracionMin,
-    proporcionPreferencial: estado.proporcionPreferencial * 100,
-    factorDemanda: estado.factorDemanda,
-    diaConteos: estado.diaConteos,
     disciplina: estado.disciplina,
     colas: estado.colas,
     asignacion_libres: estado.asignacion_libres,
@@ -1321,69 +670,18 @@ function aplicarEstado(formulario, estado) {
     control(formulario, nombre).value = String(valor ?? "");
   }
   control(formulario, "nombre_preajuste").value = estado.nombre;
-  formulario.querySelector("#archivo-csv-propio").value = "";
   formulario.querySelector("#archivo-configuracion").value = "";
   renderizarVentanillas(formulario, estado.ventanillas);
   renderizarAtencion(formulario, estado);
-  renderizarConteos(formulario, estado.conteos, estado.diaConteos);
   actualizarVisibilidad(formulario);
 }
 
 function actualizarVisibilidad(formulario) {
-  const modo = control(formulario, "modoLlegadas").value;
-  for (const bloque of formulario.querySelectorAll("[data-modo-llegada]")) {
-    bloque.hidden = !bloque.dataset.modoLlegada.split(" ").includes(modo);
-  }
   const modoLimite = control(formulario, "modoLimite").value;
   formulario.querySelector('[name="cantidadPacientes"]').closest("label").hidden =
     modoLimite !== "cantidad";
   formulario.querySelector('[name="duracionMin"]').closest("label").hidden =
     modoLimite !== "duracion";
-  for (const tipo of TIPOS) {
-    const dist = control(formulario, `atencion.${tipo}.dist`).value;
-    formulario.querySelector(
-      `[data-atencion="${tipo}"] [name="atencion.${tipo}.media"]`,
-    ).closest("label").hidden = dist === "empirica";
-    formulario.querySelector(
-      `[data-atencion="${tipo}"] [name="atencion.${tipo}.sd"]`,
-    ).closest("label").hidden = dist !== "normal_truncada";
-    formulario.querySelector(
-      `[data-atencion="${tipo}"] [name="atencion.${tipo}.k"]`,
-    ).closest("label").hidden = dist !== "erlang";
-  }
-  const proporcion = control(formulario, "proporcionPreferencial");
-  proporcion.disabled = ["observados", "conteos", "poisson"].includes(modo);
-  formulario.querySelector("#ayuda-proporcion").textContent =
-    modo === "observados"
-      ? "Se conserva la proporción propia de los patrones observados por grupo y día."
-      : modo === "conteos"
-        ? "Los conteos editables ya indican el grupo de cada llegada."
-        : modo === "poisson"
-          ? "Las tasas independientes de cada grupo determinan la proporción."
-          : "Fracción de las llegadas que serán de adultos mayores.";
-  formulario.querySelector("#ayuda-conteos-dia").hidden = modo !== "conteos";
-  formulario.querySelector("#ayuda-conteos-tabla").hidden = modo !== "conteos";
-}
-
-function actualizarCsvPropio(formulario) {
-  const estadoCsv = formulario.querySelector("#estado-csv-propio");
-  const contenido = control(formulario, "contenidoDatosPropios").value;
-  if (!contenido.trim()) {
-    estadoCsv.textContent = "";
-    estadoCsv.className = "estado";
-    return;
-  }
-  try {
-    const pacientes = parsearCsvDatosPropios(contenido);
-    estadoCsv.textContent = `CSV válido: ${pacientes.length} pacientes.`;
-    estadoCsv.className = "estado estado-correcto";
-    control(formulario, "modoLimite").value = "cantidad";
-    control(formulario, "cantidadPacientes").value = String(pacientes.length);
-  } catch (error) {
-    estadoCsv.textContent = error.message;
-    estadoCsv.className = "estado estado-error";
-  }
-  actualizarVisibilidad(formulario);
 }
 
 function limpiarErrores(formulario) {
@@ -1404,9 +702,7 @@ function mostrarErrores(formulario, errores) {
       campo?.closest("label, fieldset") ??
       (error.campo.startsWith("ventanillas")
         ? formulario.querySelector("#laboratorio-ventanillas")
-        : error.campo.startsWith("conteos")
-          ? formulario.querySelector("#tabla-conteos-laboratorio")
-          : formulario.querySelector("#laboratorio-configuracion"));
+        : formulario.querySelector("#laboratorio-configuracion"));
     campo?.setAttribute("aria-invalid", "true");
     destino?.classList.add("campo-con-error");
     if (destino) {
@@ -1415,7 +711,65 @@ function mostrarErrores(formulario, errores) {
   }
 }
 
-function mostrarMetricas(contenedor, metricas, rhoEstimado, advertencias) {
+export function calcularReferenciasMMc(configuracion) {
+  const ventanillas = configuracion.ventanillas;
+  const tasas = configuracion.llegadas.tasas_por_minuto;
+  if (configuracion.colas === "compartida") {
+    const medias = TIPOS.map((tipo) => configuracion.atencion[tipo].media);
+    const mediaComun = medias[0];
+    if (
+      configuracion.disciplina !== "FIFO" ||
+      ventanillas.some((ventanilla) =>
+        TIPOS.some((tipo) => !ventanilla.atiende.includes(tipo)),
+      ) ||
+      medias.some((media) => Math.abs(media - mediaComun) > 1e-12)
+    ) {
+      return null;
+    }
+    const tasaLlegada = Object.values(tasas).reduce(
+      (suma, tasa) => suma + tasa,
+      0,
+    );
+    const tasaServicio = 1 / mediaComun;
+    const rho = tasaLlegada / (ventanillas.length * tasaServicio);
+    return rho < 1
+      ? [
+          {
+            nombre: "Total",
+            rho,
+            teorico: calcularMMc(tasaLlegada, tasaServicio, ventanillas.length),
+          },
+        ]
+      : null;
+  }
+
+  if (configuracion.colas !== "separadas") return null;
+  const resultados = TIPOS.map((tipo) => {
+    const servidores = ventanillas.filter(
+      (ventanilla) =>
+        ventanilla.atiende.length === 1 && ventanilla.atiende[0] === tipo,
+    );
+    if (servidores.length === 0) return null;
+    const tasaServicio = 1 / configuracion.atencion[tipo].media;
+    const rho = tasas[tipo] / (servidores.length * tasaServicio);
+    if (rho >= 1) return null;
+    return {
+      nombre: tipo === "Preferencial" ? "Adulto mayor" : tipo,
+      tipo,
+      rho,
+      teorico: calcularMMc(tasas[tipo], tasaServicio, servidores.length),
+    };
+  });
+  return resultados.every(Boolean) ? resultados : null;
+}
+
+function mostrarMetricas(
+  contenedor,
+  metricas,
+  rhoEstimado,
+  advertencias,
+  configuracion,
+) {
   contenedor.replaceChildren();
   contenedor.append(nodo("h3", { texto: "Medidas de esta corrida" }));
   const lista = nodo("dl", { clase: "medidas" });
@@ -1440,6 +794,51 @@ function mostrarMetricas(contenedor, metricas, rhoEstimado, advertencias) {
     lista.append(bloque);
   }
   contenedor.append(lista);
+  const teoria = calcularReferenciasMMc(configuracion);
+  if (teoria) {
+    const referencia = nodo("section", { clase: "referencia-teorica" });
+    referencia.append(
+      nodo("h3", { texto: "Referencia teórica M/M/c" }),
+      nodo("p", {
+        texto: "Solo se muestra cuando las condiciones del modelo M/M/c se cumplen y rho < 1. Diferencia = simulado − teórico.",
+      }),
+    );
+    for (const fila of teoria) {
+      const listaTeorica = nodo("dl", { clase: "medidas" });
+      const metricasSimuladas = fila.tipo
+        ? metricas.por_grupo[fila.tipo]
+        : metricas;
+      referencia.append(
+        nodo("h4", {
+          texto: `${fila.nombre} · M/M/${configuracion.colas === "compartida" ? configuracion.ventanillas.length : configuracion.ventanillas.filter((ventanilla) => ventanilla.atiende.length === 1 && ventanilla.atiende[0] === fila.tipo).length}`,
+        }),
+        nodo("p", {
+          texto: `rho = ${formatoLocal.format(fila.rho)}.`,
+        }),
+      );
+      for (const [nombre, simulado, teorico, unidad] of [
+        ["Wq", metricasSimuladas.Wq, fila.teorico.Wq, "min"],
+        ["Lq", metricasSimuladas.Lq, fila.teorico.Lq, ""],
+      ]) {
+        for (const [etiqueta, valor] of [
+          [`${nombre} simulado`, simulado],
+          [`${nombre} teórico`, teorico],
+          [`Diferencia de ${nombre}`, simulado - teorico],
+        ]) {
+          const bloque = nodo("div");
+          bloque.append(
+            nodo("dt", { texto: etiqueta }),
+            nodo("dd", {
+              texto: `${formatoLocal.format(valor)}${unidad ? ` ${unidad}` : ""}`,
+            }),
+          );
+          listaTeorica.append(bloque);
+        }
+      }
+      referencia.append(listaTeorica);
+    }
+    contenedor.append(referencia);
+  }
   if (rhoEstimado >= 1) {
     contenedor.append(
       nodo("p", {
@@ -1655,12 +1054,12 @@ export function iniciarLaboratorio({
         throw new RangeError("El enlace no contiene una configuración del laboratorio.");
       }
       inicial = cargada;
-      avisoHash = "Configuración cargada desde el enlace.";
+      avisoHash =
+        cargada.advertencia ?? "Configuración cargada desde el enlace.";
     } catch (error) {
       avisoHash = `Enlace inválido; se iniciaron los datos observados. ${error.message}`;
     }
   }
-  let conteosMemoria = inicial.conteos;
   aplicarEstado(formulario, inicial);
   if (avisoHash) {
     estadoConfiguracion.textContent = avisoHash;
@@ -1713,7 +1112,7 @@ export function iniciarLaboratorio({
       const elemento = nodo("li");
       elemento.append(
         nodo("span", {
-          texto: `${escenario.nombre} · ${escenario.configuracion.ventanillas.length} ventanillas · demanda ×${formatoLocal.format(escenario.configuracion.factorDemanda)}`,
+          texto: `${escenario.nombre} · ${escenario.configuracion.ventanillas.length} ventanillas`,
         }),
       );
       elemento.append(
@@ -1757,7 +1156,7 @@ export function iniciarLaboratorio({
         ) {
           throw new RangeError("Ya existe un escenario con ese nombre.");
         }
-        const entrada = leerEntrada(formulario, conteosMemoria);
+        const entrada = leerEntrada(formulario);
         const validacion = validarEntradaLaboratorio(entrada, datos);
         if (validacion.errores.length) {
           mostrarErrores(formulario, validacion.errores);
@@ -1793,7 +1192,7 @@ export function iniciarLaboratorio({
     estadoComparacion.textContent = "Preparando escenarios con una semilla común…";
     estadoComparacion.className = "estado";
     try {
-      const entradaActiva = leerEntrada(formulario, conteosMemoria);
+      const entradaActiva = leerEntrada(formulario);
       const validacion = validarEntradaLaboratorio(entradaActiva, datos);
       if (validacion.errores.length) {
         mostrarErrores(formulario, validacion.errores);
@@ -1895,7 +1294,7 @@ export function iniciarLaboratorio({
 
   function refrescarValidacion() {
     const validacion = validarEntradaLaboratorio(
-      leerEntrada(formulario, conteosMemoria),
+      leerEntrada(formulario),
       datos,
     );
     mostrarErrores(formulario, validacion.errores);
@@ -1912,8 +1311,7 @@ export function iniciarLaboratorio({
     if (!boton) return;
     const accion = boton.dataset.accionVentanilla;
     if (accion) {
-      const entrada = leerEntrada(formulario, conteosMemoria);
-      conteosMemoria = entrada.conteos;
+      const entrada = leerEntrada(formulario);
       const indice = Number(boton.closest("fieldset").dataset.indice);
       if (accion === "duplicar" && entrada.ventanillas.length < MAXIMO_VENTANILLAS) {
         const original = entrada.ventanillas[indice];
@@ -1929,8 +1327,7 @@ export function iniciarLaboratorio({
       return;
     }
     if (boton.id === "agregar-ventanilla") {
-      const entrada = leerEntrada(formulario, conteosMemoria);
-      conteosMemoria = entrada.conteos;
+      const entrada = leerEntrada(formulario);
       if (entrada.ventanillas.length < MAXIMO_VENTANILLAS) {
         entrada.ventanillas.push({
           nombre: `Ventanilla ${entrada.ventanillas.length + 1}`,
@@ -1942,14 +1339,12 @@ export function iniciarLaboratorio({
       return;
     }
     if (boton.id === "aplicar-preajuste") {
-      const entrada = leerEntrada(formulario, conteosMemoria);
-      conteosMemoria = entrada.conteos;
+      const entrada = leerEntrada(formulario);
       const nuevo = crearPreajusteLaboratorio(
         control(formulario, "nombre_preajuste").value,
         datos,
         entrada.semilla,
       );
-      nuevo.conteos = conteosMemoria;
       aplicarEstado(formulario, nuevo);
       refrescarValidacion();
       return;
@@ -1964,7 +1359,7 @@ export function iniciarLaboratorio({
     }
     if (boton.id === "descargar-configuracion") {
       try {
-        const entrada = leerEntrada(formulario, conteosMemoria);
+        const entrada = leerEntrada(formulario);
         const contenido = serializarConfiguracionLaboratorio(entrada, datos);
         const archivo = new Blob([contenido], {
           type: "application/json;charset=utf-8",
@@ -1988,7 +1383,7 @@ export function iniciarLaboratorio({
     }
     if (boton.id === "copiar-enlace-configuracion") {
       try {
-        const entrada = leerEntrada(formulario, conteosMemoria);
+        const entrada = leerEntrada(formulario);
         const hash = crearHashConfiguracionLaboratorio(entrada, datos);
         const url = `${window.location.origin}${window.location.pathname}${window.location.search}${hash}`;
         if (navigator.clipboard?.writeText) {
@@ -2031,7 +1426,7 @@ export function iniciarLaboratorio({
       estadoReplicas.textContent = "Ejecutando réplicas…";
       estadoReplicas.className = "estado";
       try {
-        const entrada = leerEntrada(formulario, conteosMemoria);
+        const entrada = leerEntrada(formulario);
         const armado = crearConfiguracionLaboratorio(entrada, datos);
         const opciones = {
           meta: armado.criterio.meta,
@@ -2127,8 +1522,7 @@ export function iniciarLaboratorio({
     estado.className = "estado";
     await new Promise((resolver) => setTimeout(resolver, 0));
     try {
-      const entrada = leerEntrada(formulario, conteosMemoria);
-      conteosMemoria = entrada.conteos;
+      const entrada = leerEntrada(formulario);
       const armado = crearConfiguracionLaboratorio(entrada, datos);
       const corrida = simular(armado.configuracion);
       const metricas = calcularMetricas(corrida, armado.criterio);
@@ -2137,6 +1531,7 @@ export function iniciarLaboratorio({
         metricas,
         armado.rhoEstimado,
         armado.advertencias,
+        armado.configuracion,
       );
       resultados.hidden = false;
       estado.textContent =
@@ -2152,7 +1547,7 @@ export function iniciarLaboratorio({
       });
     } catch (error) {
       const validacion = validarEntradaLaboratorio(
-        leerEntrada(formulario, conteosMemoria),
+        leerEntrada(formulario),
         datos,
       );
       if (validacion.errores.length) {
@@ -2168,41 +1563,20 @@ export function iniciarLaboratorio({
   });
 
   formulario.addEventListener("input", () => {
-    if (control(formulario, "modoLlegadas").value === "datos_propios") {
-      actualizarCsvPropio(formulario);
-    }
-    conteosMemoria = leerEntrada(formulario, conteosMemoria).conteos;
     refrescarValidacion();
   });
   formulario.addEventListener("change", (evento) => {
-    conteosMemoria = leerEntrada(formulario, conteosMemoria).conteos;
-    if (evento.target.id === "archivo-csv-propio" && evento.target.files?.[0]) {
-      evento.target.files[0]
-        .text()
-        .then((texto) => {
-          control(formulario, "contenidoDatosPropios").value = texto;
-          actualizarCsvPropio(formulario);
-          refrescarValidacion();
-        })
-        .catch((error) => {
-          const estadoCsv = formulario.querySelector("#estado-csv-propio");
-          estadoCsv.textContent = `No fue posible leer el archivo CSV: ${error.message}`;
-          estadoCsv.className = "estado estado-error";
-        })
-        .finally(() => {
-          evento.target.value = "";
-        });
-      return;
-    }
     if (evento.target.id === "archivo-configuracion" && evento.target.files?.[0]) {
       evento.target.files[0]
         .text()
         .then((texto) => {
           const configuracion = cargarConfiguracionLaboratorio(texto, datos);
-          conteosMemoria = configuracion.conteos;
           aplicarEstado(formulario, configuracion);
-          estadoConfiguracion.textContent = "Configuración cargada correctamente.";
-          estadoConfiguracion.className = "estado estado-correcto";
+          estadoConfiguracion.textContent =
+            configuracion.advertencia ?? "Configuración cargada correctamente.";
+          estadoConfiguracion.className = configuracion.advertencia
+            ? "estado estado-advertencia"
+            : "estado estado-correcto";
           refrescarValidacion();
         })
         .catch((error) => {
@@ -2213,16 +1587,6 @@ export function iniciarLaboratorio({
           evento.target.value = "";
         });
       return;
-    }
-    if (evento.target.name === "contenidoDatosPropios") {
-      actualizarCsvPropio(formulario);
-    }
-    if (evento.target.name === "diaConteos") {
-      renderizarConteos(
-        formulario,
-        conteosMemoria.length ? conteosMemoria : inicial.conteos,
-        evento.target.value,
-      );
     }
     actualizarVisibilidad(formulario);
     refrescarValidacion();

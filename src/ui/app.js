@@ -27,9 +27,7 @@ const resumenFinalWq = document.querySelector("#resumen-final-wq");
 const botonCsv = document.querySelector("#descargar-csv");
 const estadoCsv = document.querySelector("#estado-csv");
 const valorWq = document.querySelector("#wq-simulado");
-const referenciaWq = document.querySelector("#wq-referencia");
-const intervaloReferencia = document.querySelector("#ic-referencia");
-const comparacionBase = document.querySelector("#comparacion");
+const intervaloWqSimulado = document.querySelector("#ic-wq-simulado");
 const selectorDia = document.querySelector("#dia-observado");
 const selectorTramo = document.querySelector("#tramo-observado");
 const tablaComparacion = document.querySelector("#tabla-comparacion");
@@ -194,40 +192,13 @@ async function cargarDatosObservados() {
   return respuesta.json();
 }
 
-function obtenerReferenciaBase(datos) {
-  const referencia = datos.referencia_python?.escenarios?.find(
-    (escenario) => escenario.escenario === "base",
-  );
-  if (
-    !referencia ||
-    !Number.isFinite(referencia.wq_min) ||
-    !Number.isFinite(referencia.wq_ic95_inferior) ||
-    !Number.isFinite(referencia.wq_ic95_superior) ||
-    referencia.wq_ic95_inferior > referencia.wq_ic95_superior
-  ) {
-    throw new Error(
-      "Falta la referencia base de Wq o su IC 95 % en data/observados.json; debe agregarse desde el exportador de Python.",
-    );
-  }
-  return referencia;
-}
-
-function presentarResultadosBase(resumen, referencia) {
+function presentarResultadosBase(resumen) {
   const wq = resumen.resumen.Wq.media;
-  const dentroDelIntervalo =
-    wq >= referencia.wq_ic95_inferior && wq <= referencia.wq_ic95_superior;
-
   valorWq.textContent = `${formatoMinutos.format(wq)} min`;
-  referenciaWq.textContent = `${formatoMinutos.format(referencia.wq_min)} min`;
-  intervaloReferencia.textContent =
-    `${formatoMinutos.format(referencia.wq_ic95_inferior)}–` +
-    `${formatoMinutos.format(referencia.wq_ic95_superior)} min`;
-  comparacionBase.textContent = dentroDelIntervalo
-    ? "Dentro del IC 95 % de Python"
-    : "Fuera del IC 95 % de Python";
-  comparacionBase.className = dentroDelIntervalo
-    ? "comparacion comparacion-correcta"
-    : "comparacion comparacion-fuera";
+  intervaloWqSimulado.textContent = resumen.resumen.Wq.ic95
+    ? `${formatoMinutos.format(resumen.resumen.Wq.ic95.inferior)}–` +
+      `${formatoMinutos.format(resumen.resumen.Wq.ic95.superior)} min`
+    : "No estimable";
   resultados.hidden = false;
 }
 
@@ -667,7 +638,6 @@ function crearControlReproduccion() {
 }
 
 let datosObservados;
-let referenciaBase;
 let numeroCorrida = 0;
 let escenaLocal;
 const formularioLaboratorio = document.querySelector("#formulario-laboratorio");
@@ -770,12 +740,12 @@ try {
 }
 
 botonBase.addEventListener("click", async () => {
-  if (!datosObservados || !referenciaBase) {
+  if (!datosObservados) {
     return;
   }
 
   botonBase.disabled = true;
-  estado.textContent = `Ejecutando ${numeroReplicas} réplicas con las interllegadas observadas por grupo y día…`;
+  estado.textContent = `Ejecutando ${numeroReplicas} réplicas Poisson/exponenciales con las tasas estimadas del pico…`;
   estado.className = "estado";
   await new Promise((resolver) => setTimeout(resolver, 0));
 
@@ -784,7 +754,7 @@ botonBase.addEventListener("click", async () => {
       datosObservados.meta.semilla_usada + numeroCorrida * numeroReplicas;
     const configuracion = crearConfiguracionBase(datosObservados, semilla);
     const resumen = correrReplicas(configuracion, numeroReplicas);
-    presentarResultadosBase(resumen, referenciaBase);
+    presentarResultadosBase(resumen);
     numeroCorrida += 1;
     estado.textContent =
       `Simulación completada: ${numeroReplicas} réplicas, semillas ` +
@@ -894,7 +864,6 @@ botonCsv.addEventListener("click", () => {
 
 try {
   datosObservados = await cargarDatosObservados();
-  referenciaBase = obtenerReferenciaBase(datosObservados);
   if (!datosObservados.cifras_verificadas) {
     throw new Error(
       "Faltan cifras_verificadas en data/observados.json; deben agregarse desde el exportador de Python.",
@@ -905,7 +874,7 @@ try {
   selectorDia.disabled = false;
   selectorTramo.disabled = false;
   estado.textContent =
-    "Datos y referencia Python cargados. La simulación remuestrea por separado las interllegadas de cada grupo y día.";
+    "Datos observados cargados. La simulación aleatoria usa Poisson y servicio exponencial con tasas estimadas del pico.";
   estadoReplay.textContent =
     "Elige un día y un tramo para reproducir los registros observados.";
   document.querySelector("#acerca-fuente").textContent =

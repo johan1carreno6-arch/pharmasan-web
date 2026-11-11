@@ -14,7 +14,7 @@ test("corre réplicas con semillas consecutivas y devuelve IC t del 95 %", () =>
         modo: "poisson",
         tasas_por_minuto: { General: 0.3 },
       },
-      atencion: { General: { dist: "exponencial", media: 2 } },
+      atencion: { General: { media: 2 } },
       horizonte_min: 40,
       semilla: 100,
       asignacion_libres: "primera_libre",
@@ -40,7 +40,7 @@ test("las réplicas asíncronas son reproducibles y notifican el progreso", asyn
   const configuracion = {
     ventanillas: [{ id: 1, nombre: "General", atiende: ["General"] }],
     llegadas: { modo: "poisson", tasas_por_minuto: { General: 0.3 } },
-    atencion: { General: { dist: "exponencial", media: 2 } },
+    atencion: { General: { media: 2 } },
     horizonte_min: 40,
     semilla: 100,
     asignacion_libres: "primera_libre",

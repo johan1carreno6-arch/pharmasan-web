@@ -333,6 +333,24 @@ test("las personas activas se dibujan en la escena observada", async (t) => {
         await comprobarPixeles(pagina, contenedor, diagnostico, "Laboratorio"),
       );
 
+      await pagina.locator("#tasa-general").fill("2");
+      await pagina.locator("#tasa-preferencial").fill("2");
+      await pagina.locator("#simular-laboratorio").click();
+      await pagina.waitForFunction(
+        () =>
+          document
+            .querySelector("#estado-laboratorio")
+            .textContent.startsWith("Corrida completada:"),
+        null,
+        { timeout: 30000 },
+      );
+      const resultadosEstables = await pagina
+        .locator("#resultados-laboratorio")
+        .innerText();
+      assert.match(resultadosEstables, /Referencia teórica M\/M\/c/);
+      assert.match(resultadosEstables, /Diferencia de Wq/);
+      assert.match(resultadosEstables, /Diferencia de Lq/);
+
       await pagina.locator("#volver-observados").click();
       await pagina.waitForFunction(
         () =>
