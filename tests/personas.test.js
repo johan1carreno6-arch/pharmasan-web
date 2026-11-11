@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { crearControlPersonas } from "../src/escena/personas.js";
+import {
+  crearControlPersonas,
+  crearRecorridoDesdeEventos,
+  obtenerFrameDesdeEventos,
+} from "../src/escena/personas.js";
+
+const POSICION_EXTERIOR = [-10.8, 0, 6.52];
 
 function crearEventosPrueba() {
   const estado = (fila, ocupado) => ({
@@ -69,7 +75,7 @@ test("la animación de personas no modifica el registro ni las métricas", () =>
   assert.equal(eventos.length, 4);
 });
 
-test("las posiciones y transiciones se derivan de los eventos del motor", () => {
+test("cada paciente entra, espera, llega a servicio y sale por la puerta", () => {
   const control = crearControlPersonas();
   control.cargar(crearEventosPrueba());
 
@@ -79,20 +85,104 @@ test("las posiciones y transiciones se derivan de los eventos del motor", () => 
   const entrando = control.actualizar(0.06);
   assert.equal(entrando.personas.length, 1);
   assert.equal(entrando.personas[0].id, "G1");
-  assert.ok(entrando.personas[0].posicion[0] < -4.65);
-
-  const enServicio = control.actualizar(0.25);
-  assert.deepEqual(enServicio.personas[0].posicion, [-4.65, 0, -0.75]);
-  assert.equal(enServicio.personas[0].estado, "servicio");
+  assert.ok(entrando.personas[0].posicion[0] < -9);
 
   const enFila = control.actualizar(1);
   const pacienteEnFila = enFila.personas.find((persona) => persona.id === "G2");
   assert.deepEqual(pacienteEnFila.posicion, [-6.33, 0, 0.43]);
 
+  const inicioServicio = control.actualizar(2);
+  const atendido = inicioServicio.personas.find((persona) => persona.id === "G2");
+  assert.deepEqual(atendido.posicion, [-6.33, 0, 0.43]);
+  assert.equal(atendido.estado, "servicio");
+
   const saliendo = control.actualizar(2.1);
   const pacienteQueSale = saliendo.personas.find((persona) => persona.id === "G1");
   assert.equal(pacienteQueSale.estado, "salida");
-  assert.ok(pacienteQueSale.posicion[0] < -4.65);
+  assert.notDeepEqual(pacienteQueSale.posicion, POSICION_EXTERIOR);
+
+  const afuera = control.actualizar(2.6);
+  assert.ok(!afuera.personas.some((persona) => persona.id === "G1"));
+});
+
+test("las trayectorias no saltan y los saltos temporales son reversibles", () => {
+  const eventos = crearEventosPrueba();
+  const recorrido = crearRecorridoDesdeEventos(eventos);
+  const llegadas = new Map(
+    eventos
+      .filter((evento) => evento.tipo === "llegada")
+      .map((evento) => [evento.paciente_id, evento.tiempo]),
+  );
+  const posicionesPorId = new Map();
+  for (let tiempo = -0.1; tiempo <= 4.5; tiempo += 0.01) {
+    const frame = obtenerFrameDesdeEventos(recorrido, tiempo);
+    for (const persona of frame.personas) {
+      const anterior = posicionesPorId.get(persona.id);
+      if (anterior) {
+        const distancia = Math.hypot(
+          persona.posicion[0] - anterior[0],
+          persona.posicion[1] - anterior[1],
+          persona.posicion[2] - anterior[2],
+        );
+        assert.ok(distancia <= 0.281, `${persona.id} se desplazó ${distancia} en 0,01 min`);
+      } else {
+        const distanciaDesdeEntrada = Math.hypot(
+          persona.posicion[0] - POSICION_EXTERIOR[0],
+          persona.posicion[1] - POSICION_EXTERIOR[1],
+          persona.posicion[2] - POSICION_EXTERIOR[2],
+        );
+        assert.ok(
+          distanciaDesdeEntrada <= 28 * (tiempo - llegadas.get(persona.id)) + 0.01,
+          `${persona.id} no inicia fuera del local`,
+        );
+      }
+      posicionesPorId.set(persona.id, persona.posicion);
+    }
+  }
+
+  const adelantado = obtenerFrameDesdeEventos(recorrido, 3.2);
+  const retrocedido = obtenerFrameDesdeEventos(recorrido, 0.25);
+  assert.deepEqual(
+    obtenerFrameDesdeEventos(recorrido, 3.2),
+    adelantado,
+  );
+  assert.deepEqual(
+    obtenerFrameDesdeEventos(recorrido, 0.25),
+    retrocedido,
+  );
+  assert.deepEqual(
+    obtenerFrameDesdeEventos(recorrido, 3.2),
+    adelantado,
+    "volver atrás no debe alterar un instante consultado previamente",
+  );
+});
+
+test("una fila de 61 personas usa la extensión sin superponerlas", () => {
+  const eventos = [];
+  const ids = [];
+  for (let indice = 0; indice < 61; indice += 1) {
+    const id = `G${indice + 1}`;
+    ids.push(id);
+    eventos.push({
+      tipo: "llegada",
+      tiempo: indice * 2,
+      paciente_id: id,
+      paciente_tipo: "General",
+      estado: {
+        filas: { General: [...ids], Preferencial: [] },
+        ventanillas: [{ id: 1, ocupada: false, paciente: null }],
+      },
+    });
+  }
+  const frame = crearControlPersonas().cargar(eventos);
+  const final = crearControlPersonas();
+  final.cargar(eventos);
+  const personas = final.actualizar(121);
+  assert.equal(personas.personas.length, 61);
+  const posiciones = personas.personas.map(({ posicion }) => posicion);
+  assert.equal(new Set(posiciones.map((posicion) => posicion.join(","))).size, 61);
+  assert.ok(posiciones.every(([x, , z]) => x >= -9 && x <= 9 && z >= -6 && z <= 6));
+  assert.equal(frame.personas.length, 1);
 });
 
 test("reiniciar devuelve el estado de personas al inicio", () => {

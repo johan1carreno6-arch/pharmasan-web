@@ -12,8 +12,8 @@ import {
 } from "../src/escena/instancias-personas.js";
 import * as THREE from "../vendor/three/three.module.js";
 
-test("la maqueta reserva 60 espacios y limita el render a 30 fps", () => {
-  assert.equal(CAPACIDAD_FILAS, 60);
+test("la maqueta reserva 60 posiciones por grupo y limita el render a 30 fps", () => {
+  assert.equal(CAPACIDAD_FILAS, 120);
   assert.equal(FPS_OBJETIVO, 30);
 });
 

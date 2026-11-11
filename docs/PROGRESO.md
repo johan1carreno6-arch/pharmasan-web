@@ -1,5 +1,28 @@
 # Progreso
 
+## 2026-11-11 — Anima el recorrido completo de los pacientes
+
+- **Hecho:** cada paciente aparece en el exterior, cruza la puerta, llega a
+  su posición de fila, camina cuando la fila cambia, se desplaza a la
+  ventanilla desde el inicio de servicio y sale por la puerta después del fin.
+  Las trayectorias se consultan directamente por tiempo, por lo que avanzar,
+  retroceder y saltar no depende del fotograma anterior ni altera el motor.
+- **Filas:** se mantuvieron las primeras 30 posiciones y se agregó un segundo
+  tramo separado, delimitado por postes y cintas; quedan **60 posiciones por
+  grupo (120 en total)**. Una prueba con **61 personas General** confirma que
+  sus posiciones no se repiten y permanecen dentro del local.
+- **Continuidad:** la velocidad está acotada a **28 unidades de escena/minuto**.
+  La prueba recorre una corrida en pasos de **0,01 min**, comprueba
+  desplazamientos de hasta **0,281 unidades**, el estado al saltar hacia
+  delante y atrás y la entrada desde el exterior.
+- **Verificación:** `node --test`: **65 aprobadas, 0 fallidas**. Playwright
+  mantuvo la prueba de píxeles en **1366×768** y **390×844**, sin fallos.
+- **Archivos:** `src/escena/personas.js`, `src/escena/local3d.js`,
+  `tests/personas.test.js`, `tests/escena.test.js`, `docs/PROGRESO.md` y
+  `docs/DECISIONES.md`.
+- **Pendientes:** el límite visual soportado de fila se amplía de 30 a 60
+  posiciones por grupo; no se midió rendimiento en esta corrección.
+
 ## 2026-11-10 — Corrige el recorte de personas en la escena 3D
 
 - **Causa confirmada:** Three.js r160 calculaba la `boundingSphere` de las

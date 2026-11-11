@@ -1,5 +1,12 @@
 # Decisiones
 
+- Las rutas visuales de los pacientes se construyen una sola vez desde los
+  estados y tiempos del motor, y el fotograma se calcula directamente para el
+  instante solicitado. Se limita la velocidad a **28 unidades de escena por
+  minuto**, se inicia fuera de la puerta y solo se elimina a la persona cuando
+  ha terminado su recorrido al exterior. Así, la reproducción no depende de
+  los pasos de render ni cambia métricas. Cada grupo conserva sus primeras 30
+  posiciones y suma otras 30 en un segundo tramo delimitado.
 - Las mallas instanciadas de cuerpo, cabeza, piernas y anillo usan
   `frustumCulled = false`: Three.js r160 conservaba una `boundingSphere`
   calculada con todas las instancias ocultas en `y=-100`, y `setMatrixAt()` no

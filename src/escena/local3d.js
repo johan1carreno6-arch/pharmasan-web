@@ -28,7 +28,7 @@ const PALETA = {
 };
 
 const GEOMETRIA_LOCAL = { ancho: 20, fondo: 14, x: 10, z: 7 };
-export const CAPACIDAD_FILAS = 60;
+export const CAPACIDAD_FILAS = 120;
 export const UMBRAL_CALIDAD_REDUCIDA = 120;
 export const FPS_OBJETIVO = 30;
 
@@ -249,8 +249,22 @@ function crearPostesYCintas(escena, recursos) {
   const postes = [];
   const cintas = [];
   const zonas = [
-    { x0: -7.05, x1: -0.35, z0: -0.12, z1: 5.85 },
-    { x0: 0.4, x1: 7.1, z0: -0.12, z1: 5.85 },
+    {
+      x0: -7.05, x1: -0.35, z0: -0.12, z1: 5.85,
+      inicioX: -6.33, inicioZ: 0.43, pasoX: 1.31, pasoZ: 0.98,
+    },
+    {
+      x0: 0.4, x1: 7.1, z0: -0.12, z1: 5.85,
+      inicioX: 1.12, inicioZ: 0.43, pasoX: 1.31, pasoZ: 0.98,
+    },
+    {
+      x0: -8.55, x1: -2.25, z0: -5.25, z1: -0.1,
+      inicioX: -7.83, inicioZ: -0.35, pasoX: 1.22, pasoZ: -0.85,
+    },
+    {
+      x0: 2.25, x1: 8.55, z0: -5.25, z1: -0.1,
+      inicioX: 2.97, inicioZ: -0.35, pasoX: 1.22, pasoZ: -0.85,
+    },
   ];
 
   for (const zona of zonas) {
@@ -312,15 +326,14 @@ function crearPostesYCintas(escena, recursos) {
 
   const espaciosPorZona = [];
   const columnasPorFila = 5;
-  const filasPorZona = CAPACIDAD_FILAS / (zonas.length * columnasPorFila);
   for (const zona of zonas) {
     const espacios = [];
-    for (let fila = 0; fila < filasPorZona; fila += 1) {
+    for (let fila = 0; fila < 6; fila += 1) {
       for (let columna = 0; columna < columnasPorFila; columna += 1) {
         espacios.push([
-          zona.x0 + 0.72 + columna * 1.31,
+          zona.inicioX + columna * zona.pasoX,
           0.035,
-          zona.z0 + 0.55 + fila * 0.98,
+          zona.inicioZ + fila * zona.pasoZ,
         ]);
       }
     }
@@ -344,14 +357,14 @@ function crearPostesYCintas(escena, recursos) {
 
   agregarCartel(
     escena,
-    "GENERAL · 30 ESPACIOS",
+    "GENERAL · FILA EXTENSIBLE",
     [-3.7, 0.025, 0.35],
     [4.8, 0.62],
     { rotacionX: -Math.PI / 2, fondo: "#27664b", tamano: 50 },
   );
   agregarCartel(
     escena,
-    "PREFERENCIAL · 30 ESPACIOS",
+    "PREFERENCIAL · FILA EXTENSIBLE",
     [3.75, 0.025, 0.35],
     [5.2, 0.62],
     { rotacionX: -Math.PI / 2, fondo: "#a65f31", tamano: 48 },
@@ -669,13 +682,7 @@ export function crearLocal3D(contenedor) {
     return { luz, fondoBarra, barra, x };
   });
   function obtenerPosicionVisual(persona) {
-    const indiceVentanilla = Number(
-      String(persona?.ventanilla ?? "").replace(/\D/g, ""),
-    ) - 1;
-    const indicadorVentanilla = indicadores[indiceVentanilla];
-    return persona?.estado === "servicio" && indicadorVentanilla
-      ? [indicadorVentanilla.x, 0, -0.75]
-      : persona?.posicion ?? [0, -100, 0];
+    return persona?.posicion ?? [0, -100, 0];
   }
 
   function configurarIndicadores(cantidad) {

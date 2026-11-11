@@ -1,19 +1,30 @@
 export const UMBRAL_META_ESPERA = 2;
 export const UMBRAL_MAXIMO_ESPERA = 5;
 
-const POSICION_ENTRADA = [-8.35, 0, 5.85];
-const POSICION_SALIDA = [-9.2, 0, 5.85];
+const VELOCIDAD_MAXIMA = 28;
+const POSICION_EXTERIOR = [-10.8, 0, 6.52];
+const POSICION_PUERTA = [-9.05, 0, 5.85];
+const POSICION_SALIDA = [-10.8, 0, 6.52];
 const POSICIONES_VENTANILLAS = {
   1: [-4.65, 0, -0.75],
   2: [-0.5, 0, -0.75],
   3: [4.35, 0, -0.75],
 };
-const DURACION_ENTRADA = 0.12;
-const DURACION_CAMBIO_FILA = 0.12;
-const DURACION_SALIDA = 0.35;
 
 function clonarPosicion(posicion) {
   return [...posicion];
+}
+
+function distancia(primera, segunda) {
+  return Math.hypot(
+    segunda[0] - primera[0],
+    segunda[1] - primera[1],
+    segunda[2] - primera[2],
+  );
+}
+
+function duracionMovimiento(desde, hasta) {
+  return distancia(desde, hasta) / VELOCIDAD_MAXIMA;
 }
 
 function interpolar(inicio, fin, progreso) {
@@ -24,11 +35,32 @@ function interpolar(inicio, fin, progreso) {
 }
 
 function posicionFila(tipo, indice) {
-  const indiceSeguro = Math.max(0, Math.min(29, indice));
-  const fila = Math.floor(indiceSeguro / 5);
-  const columna = indiceSeguro % 5;
-  const x = tipo === "Preferencial" ? 1.12 : -6.33;
-  return [x + columna * 1.31, 0, 0.43 + fila * 0.98];
+  if (!Number.isInteger(indice) || indice < 0) {
+    throw new RangeError("La posición de fila debe ser un entero no negativo.");
+  }
+  const columna = indice % 30;
+  const bloque = Math.floor(indice / 30);
+  const fila = Math.floor(columna / 5);
+  const lugar = columna % 5;
+  if (bloque === 0) {
+    const x = tipo === "Preferencial" ? 1.12 : -6.33;
+    return [x + lugar * 1.31, 0, 0.43 + fila * 0.98];
+  }
+  if (bloque === 1) {
+    const x = tipo === "Preferencial" ? 2.97 : -7.83;
+    return [
+      x + lugar * 1.22,
+      0,
+      -0.35 - fila * 0.85,
+    ];
+  }
+  const lado = tipo === "Preferencial" ? 1 : -1;
+  const extension = bloque - 1;
+  return [
+    lado * (2.97 + extension * 0.72 + lugar * 1.22),
+    0,
+    -0.35 - fila * 0.85,
+  ];
 }
 
 function crearPosiciones(estado) {
@@ -52,13 +84,14 @@ function crearPosiciones(estado) {
     if (!ventanilla.ocupada || ventanilla.paciente === null) {
       continue;
     }
+    const numero = Number(ventanilla.id);
     posiciones.set(ventanilla.paciente, {
       id: ventanilla.paciente,
       tipo: ventanilla.tipo ?? tipos[ventanilla.paciente] ?? "General",
       estado: "servicio",
       posicion:
         POSICIONES_VENTANILLAS[ventanilla.id] ??
-        [Number(ventanilla.id) * 2, 0, -0.75],
+        [(Number.isFinite(numero) ? numero : 1) * 2, 0, -0.75],
       ventanilla: ventanilla.id,
     });
   }
@@ -82,6 +115,73 @@ function validarEventos(eventos) {
   }
 }
 
+function posicionEnTrayectoria(trayectoria, tiempo) {
+  if (trayectoria.length === 0) {
+    return clonarPosicion(POSICION_EXTERIOR);
+  }
+  for (const tramo of trayectoria) {
+    if (tiempo < tramo.inicio) {
+      return clonarPosicion(tramo.desde);
+    }
+    if (tiempo <= tramo.fin) {
+      const duracion = tramo.fin - tramo.inicio;
+      return duracion === 0
+        ? clonarPosicion(tramo.hasta)
+        : interpolar(tramo.desde, tramo.hasta, (tiempo - tramo.inicio) / duracion);
+    }
+  }
+  return clonarPosicion(trayectoria.at(-1).hasta);
+}
+
+function terminarTrayectoriaEn(trayectoria, tiempo) {
+  const actual = posicionEnTrayectoria(trayectoria, tiempo);
+  const conservados = [];
+  for (const tramo of trayectoria) {
+    if (tramo.fin <= tiempo) {
+      conservados.push(tramo);
+    } else if (tramo.inicio < tiempo) {
+      conservados.push({
+        desde: tramo.desde,
+        hasta: clonarPosicion(actual),
+        inicio: tramo.inicio,
+        fin: tiempo,
+      });
+      break;
+    } else {
+      break;
+    }
+  }
+  trayectoria.splice(0, trayectoria.length, ...conservados);
+  return actual;
+}
+
+function agregarTramo(trayectoria, desde, hasta, inicio) {
+  const duracion = duracionMovimiento(desde, hasta);
+  trayectoria.push({
+    desde: clonarPosicion(desde),
+    hasta: clonarPosicion(hasta),
+    inicio,
+    fin: inicio + duracion,
+  });
+  return inicio + duracion;
+}
+
+function agregarRutaDeLlegada(trayectoria, destino, tiempo) {
+  let siguiente = agregarTramo(
+    trayectoria,
+    POSICION_EXTERIOR,
+    POSICION_PUERTA,
+    tiempo,
+  );
+  siguiente = agregarTramo(trayectoria, POSICION_PUERTA, destino, siguiente);
+  return siguiente;
+}
+
+function agregarRutaDeSalida(trayectoria, origen, tiempo) {
+  let siguiente = agregarTramo(trayectoria, origen, POSICION_PUERTA, tiempo);
+  agregarTramo(trayectoria, POSICION_PUERTA, POSICION_SALIDA, siguiente);
+}
+
 function posicionesIguales(primera, segunda) {
   return primera.every((valor, indice) => Math.abs(valor - segunda[indice]) < 1e-8);
 }
@@ -94,10 +194,11 @@ export function crearRecorridoDesdeEventos(eventos) {
   const inicios = new Map();
   const finales = new Map();
   const salidas = new Map();
+  const trayectorias = new Map();
+  let posicionesAnteriores = new Map();
+  let ventanillasAnteriores = [];
 
-  for (let indice = 0; indice < eventos.length; indice += 1) {
-    const evento = eventos[indice];
-    const anterior = fotogramas.at(-1);
+  for (const evento of eventos) {
     if (evento.tipo === "llegada") {
       llegadas.set(evento.paciente_id, evento.tiempo);
       if (evento.paciente_tipo) {
@@ -109,101 +210,94 @@ export function crearRecorridoDesdeEventos(eventos) {
       salidas.set(evento.paciente_id, evento.tiempo);
     }
 
-    let posiciones = crearPosiciones(evento.estado);
+    const posiciones = crearPosiciones(evento.estado);
     for (const [id, persona] of posiciones) {
       if (persona.tipo === "General" || persona.tipo === "Preferencial") {
         tipos.set(id, persona.tipo);
       }
     }
+
     for (const ventanilla of evento.estado.ventanillas) {
-      if (ventanilla.ocupada && !inicios.has(ventanilla.paciente)) {
+      if (!ventanilla.ocupada || ventanilla.paciente === null) {
+        continue;
+      }
+      const anterior = ventanillasAnteriores.find(
+        (elemento) => String(elemento.id) === String(ventanilla.id),
+      );
+      if (!anterior?.ocupada || anterior.paciente !== ventanilla.paciente) {
         inicios.set(ventanilla.paciente, evento.tiempo);
-      } else if (ventanilla.ocupada && anterior) {
-        const ocupacionAnterior = anterior.ventanillas.find(
-          (elemento) => String(elemento.id) === String(ventanilla.id),
-        );
-        if (ocupacionAnterior?.paciente !== ventanilla.paciente) {
-          inicios.set(ventanilla.paciente, evento.tiempo);
-        }
       }
     }
 
-    if (evento.tipo === "fin_servicio") {
-      const personaAnterior =
-        anterior?.posiciones.get(evento.paciente_id) ??
-        crearPosiciones(indice > 0 ? eventos[indice - 1].estado : evento.estado).get(
-          evento.paciente_id,
+    for (const [id, objetivo] of posiciones) {
+      const trayectoria = trayectorias.get(id) ?? [];
+      const llegada = evento.tipo === "llegada" && id === evento.paciente_id;
+      if (llegada && trayectoria.length === 0) {
+        trayectorias.set(id, trayectoria);
+        const tipoFila = objetivo.tipo;
+        const cola = evento.estado.filas[tipoFila] ?? [];
+        const indiceCola = cola.indexOf(id);
+        const posicionInicial = posicionFila(tipoFila, Math.max(0, indiceCola));
+        const finEntrada = agregarRutaDeLlegada(
+          trayectoria,
+          posicionInicial,
+          evento.tiempo,
         );
+        if (objetivo.estado === "servicio") {
+          agregarTramo(trayectoria, posicionInicial, objetivo.posicion, finEntrada);
+        }
+        continue;
+      }
+
+      trayectorias.set(id, trayectoria);
+      const anterior = posicionesAnteriores.get(id);
+      if (!anterior || posicionesIguales(anterior.posicion, objetivo.posicion)) {
+        continue;
+      }
+
+      const posicionActual = terminarTrayectoriaEn(trayectoria, evento.tiempo);
+      const inicioMovimiento =
+        objetivo.estado === "servicio" && trayectoria.length > 0
+          ? Math.max(evento.tiempo, trayectoria.at(-1).fin)
+          : evento.tiempo;
+      agregarTramo(trayectoria, posicionActual, objetivo.posicion, inicioMovimiento);
+    }
+
+    if (evento.tipo === "fin_servicio") {
+      const trayectoria = trayectorias.get(evento.paciente_id) ?? [];
+      const origen = posicionEnTrayectoria(trayectoria, evento.tiempo);
+      terminarTrayectoriaEn(trayectoria, evento.tiempo);
+      agregarRutaDeSalida(trayectoria, origen, evento.tiempo);
+      trayectorias.set(evento.paciente_id, trayectoria);
+      const personaAnterior = posicionesAnteriores.get(evento.paciente_id);
       posiciones.set(evento.paciente_id, {
         id: evento.paciente_id,
         tipo: tipos.get(evento.paciente_id) ?? personaAnterior?.tipo ?? "General",
         estado: "salida",
-        posicion: clonarPosicion(POSICION_SALIDA),
+        posicion: POSICION_SALIDA,
         ventanilla: null,
       });
     }
+
     for (const [id, salida] of salidas) {
-      if (evento.tiempo - salida < DURACION_SALIDA && !posiciones.has(id)) {
+      const trayectoria = trayectorias.get(id);
+      if (
+        evento.tiempo - salida < (trayectoria?.at(-1)?.fin ?? salida) - salida &&
+        !posiciones.has(id)
+      ) {
         posiciones.set(id, {
           id,
           tipo: tipos.get(id) ?? "General",
           estado: "salida",
-          posicion: clonarPosicion(POSICION_SALIDA),
+          posicion: POSICION_SALIDA,
           ventanilla: null,
-        });
-      }
-    }
-
-    const transiciones = new Map(anterior?.transiciones ?? []);
-    for (const [id, transicion] of transiciones) {
-      if (evento.tiempo >= transicion.inicio + transicion.duracion) {
-        transiciones.delete(id);
-      }
-    }
-    const ids = new Set([
-      ...(anterior?.posiciones.keys() ?? []),
-      ...posiciones.keys(),
-    ]);
-    for (const id of ids) {
-      const desde = anterior?.posiciones.get(id);
-      const hasta = posiciones.get(id);
-      if (!hasta) {
-        continue;
-      }
-      if (!desde && id === evento.paciente_id && evento.tipo === "llegada") {
-        transiciones.set(id, {
-          desde: clonarPosicion(POSICION_ENTRADA),
-          hasta: clonarPosicion(hasta.posicion),
-          inicio: evento.tiempo,
-          duracion: DURACION_ENTRADA,
-        });
-      } else if (desde && desde.estado === "servicio" && hasta.estado === "salida") {
-        transiciones.set(id, {
-          desde: clonarPosicion(desde.posicion),
-          hasta: clonarPosicion(hasta.posicion),
-          inicio: evento.tiempo,
-          duracion: DURACION_SALIDA,
-        });
-      } else if (
-        desde &&
-        (desde.estado !== hasta.estado ||
-          !posicionesIguales(desde.posicion, hasta.posicion))
-      ) {
-        transiciones.set(id, {
-          desde: clonarPosicion(desde.posicion),
-          hasta: clonarPosicion(hasta.posicion),
-          inicio: evento.tiempo,
-          duracion: DURACION_CAMBIO_FILA,
         });
       }
     }
 
     fotogramas.push({
       tiempo: evento.tiempo,
-      tipoEvento: evento.tipo,
-      pacienteId: evento.paciente_id,
-      posiciones,
-      transiciones,
+      posiciones: new Map(posiciones),
       ventanillas: evento.estado.ventanillas.map((ventanilla) => ({
         id: ventanilla.id,
         ocupada: Boolean(ventanilla.ocupada),
@@ -216,6 +310,8 @@ export function crearRecorridoDesdeEventos(eventos) {
         ]),
       ),
     });
+    posicionesAnteriores = new Map(posiciones);
+    ventanillasAnteriores = evento.estado.ventanillas;
   }
 
   return {
@@ -225,15 +321,13 @@ export function crearRecorridoDesdeEventos(eventos) {
     inicios,
     finales,
     salidas,
+    trayectorias,
     inicio: fotogramas[0]?.tiempo ?? 0,
     fin: fotogramas.at(-1)?.tiempo ?? 0,
   };
 }
 
 function buscarFotograma(fotogramas, tiempo) {
-  if (fotogramas.length === 0) {
-    return null;
-  }
   let lo = 0;
   let hi = fotogramas.length - 1;
   let resultado = null;
@@ -265,25 +359,15 @@ export function obtenerFrameDesdeEventos(recorrido, tiempo) {
   for (const [id, persona] of fotograma.posiciones) {
     const llegada = recorrido.llegadas.get(id);
     const salida = recorrido.salidas.get(id);
+    const trayectoria = recorrido.trayectorias.get(id) ?? [];
     if (
       llegada === undefined ||
       tiempo < llegada ||
-      (salida !== undefined && tiempo - salida >= DURACION_SALIDA)
+      (salida !== undefined && tiempo >= (trayectoria.at(-1)?.fin ?? salida))
     ) {
       continue;
     }
-    const transicion = fotograma.transiciones.get(id);
-    const progreso =
-      transicion && transicion.duracion > 0
-        ? Math.max(
-            0,
-            Math.min(1, (tiempo - transicion.inicio) / transicion.duracion),
-          )
-        : 1;
-    const posicion =
-      transicion && progreso < 1
-        ? interpolar(transicion.desde, transicion.hasta, progreso)
-        : clonarPosicion(persona.posicion);
+    const posicion = posicionEnTrayectoria(trayectoria, tiempo);
     const inicio = recorrido.inicios.get(id);
     const espera =
       inicio === undefined
