@@ -1,5 +1,26 @@
 # Progreso
 
+## 2026-11-11 — Renombra a Simular aleatoriamente
+
+- **Hecho:** el título de la sección, su pestaña, la descripción accesible del
+  conjunto de pestañas y el paso correspondiente del recorrido inicial ahora
+  dicen «Simular aleatoriamente». README, mensajes de error, nombres de descarga
+  y etiquetas de la reproducción también usan el nombre nuevo. Se mantienen
+  IDs y nombres de módulos internos para no romper referencias.
+- **Accesibilidad y navegador:** Playwright verificó el nombre del encabezado,
+  pestaña y tablist accesible, el texto del recorrido, «Acerca de» y que no haya
+  menciones visibles a «Laboratorio para la docente» o «docente». La escena
+  conservó la prueba visual en **1366×768** y **390×844**.
+- **Pruebas:** `node --test`: **55 aprobadas, 0 fallidas**; `git diff --check`
+  sin errores.
+- **Archivos:** `index.html`, `README.md`, `src/ui/app.js`,
+  `src/ui/exportar-csv.js`, `src/ui/laboratorio.js`,
+  `tests/escena-browser.test.js`, `tests/exportar_csv.test.js`,
+  `docs/PROGRESO.md` y `docs/DECISIONES.md`.
+- **Pendientes:** no se hizo push ni se verificó GitHub Actions; faltan la
+  verificación final bajo el subdirectorio `/pharmasan-web/` y las pruebas de
+  las mejoras visuales de las personas.
+
 ## 2026-11-11 — Deja solo llegadas Poisson y servicio exponencial
 
 - **Modelo:** el laboratorio y la simulación aleatoria del pico ahora usan

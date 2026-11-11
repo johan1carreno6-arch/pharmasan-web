@@ -41,8 +41,11 @@ test("crea nombres de archivo para cada selección disponible", () => {
     "pharmasan-reproduccion-martes-jornada-completa.csv",
   );
   assert.equal(
-    nombreCsvReproduccion({ dia: "Simulación", tramo: "laboratorio" }),
-    "pharmasan-reproduccion-simulacion-laboratorio.csv",
+    nombreCsvReproduccion({
+      dia: "Simulación",
+      tramo: "simular_aleatoriamente",
+    }),
+    "pharmasan-reproduccion-simulacion-simular-aleatoriamente.csv",
   );
 });
 

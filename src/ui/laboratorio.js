@@ -121,7 +121,7 @@ function exigirDatos(datos) {
     !Number.isInteger(datos.meta?.semilla_usada)
   ) {
     throw new TypeError(
-      "El laboratorio requiere pacientes, pico, medias de atención y semilla observados.",
+      "La simulación aleatoria requiere pacientes, pico, medias de atención y semilla observados.",
     );
   }
 }
@@ -209,7 +209,7 @@ export function validarEntradaLaboratorio(entrada, datos) {
       errores: [
         {
           campo: "formulario",
-          mensaje: "Completa la configuración del laboratorio.",
+          mensaje: "Completa la configuración de la simulación aleatoria.",
         },
       ],
       advertencias,
@@ -1009,7 +1009,7 @@ export function iniciarLaboratorio({
     typeof alSimular !== "function" ||
     typeof alVolverObservados !== "function"
   ) {
-    throw new TypeError("Faltan elementos o acciones para iniciar el laboratorio.");
+    throw new TypeError("Faltan elementos o acciones para iniciar la simulación aleatoria.");
   }
   const estado = formulario.querySelector("#estado-laboratorio");
   const botonSimular = formulario.querySelector("#simular-laboratorio");
@@ -1051,7 +1051,7 @@ export function iniciarLaboratorio({
     try {
       const cargada = leerHashConfiguracionLaboratorio(window.location.hash, datos);
       if (!cargada) {
-        throw new RangeError("El enlace no contiene una configuración del laboratorio.");
+        throw new RangeError("El enlace no contiene una configuración de la simulación aleatoria.");
       }
       inicial = cargada;
       avisoHash =
@@ -1367,7 +1367,7 @@ export function iniciarLaboratorio({
         const url = URL.createObjectURL(archivo);
         const enlace = nodo("a", {
           href: url,
-          download: "configuracion-laboratorio.json",
+          download: "configuracion-simulacion-aleatoria.json",
         });
         document.body.append(enlace);
         enlace.click();

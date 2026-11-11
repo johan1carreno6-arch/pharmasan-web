@@ -290,6 +290,49 @@ test("las personas activas se dibujan en la escena observada", async (t) => {
         null,
         { timeout: 30000 },
       );
+      assert.equal(
+        await pagina
+          .getByRole("heading", { name: "Simular aleatoriamente" })
+          .count(),
+        1,
+      );
+      assert.equal(
+        await pagina
+          .getByRole("tablist", {
+            name: "Secciones de Simular aleatoriamente",
+          })
+          .count(),
+        1,
+      );
+      assert.equal(
+        await pagina
+          .getByRole("tab", { name: "Simular aleatoriamente" })
+          .count(),
+        1,
+      );
+      const etiquetasAria = await pagina
+        .locator("[aria-label]")
+        .evaluateAll((elementos) =>
+          elementos.map((elemento) => elemento.getAttribute("aria-label")),
+        );
+      assert.doesNotMatch(etiquetasAria.join(" "), /laboratorio|docente/i);
+      assert.doesNotMatch(
+        await pagina.locator("body").innerText(),
+        /Laboratorio para la docente|docente/i,
+      );
+      await pagina.locator("#abrir-recorrido").click();
+      await pagina.locator("#siguiente-recorrido").click();
+      assert.equal(
+        await pagina.locator("#titulo-paso-recorrido").innerText(),
+        "Simular aleatoriamente",
+      );
+      await pagina.locator("#cerrar-dialogo-ayuda").click();
+      await pagina.locator("#abrir-acerca").click();
+      assert.doesNotMatch(
+        await pagina.locator("#contenido-acerca").innerText(),
+        /Laboratorio para la docente|docente/i,
+      );
+      await pagina.locator("#cerrar-dialogo-ayuda").click();
       const hashRepositorio = createHash("sha256")
         .update(await readFile(resolve(raiz, "src", "escena", "local3d.js")))
         .digest("hex");

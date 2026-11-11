@@ -1,5 +1,10 @@
 # Decisiones
 
+- El nombre visible del antiguo laboratorio es «Simular aleatoriamente» en el
+  encabezado, pestaña, recorrido inicial, ayuda, etiquetas accesibles y
+  documentación. Se mantienen los identificadores internos `laboratorio` y el
+  nombre de módulo porque cambiar las referencias existentes no aporta valor;
+  los mensajes y archivos descargables ya usan el nombre nuevo.
 - El laboratorio aleatorio utiliza únicamente llegadas Poisson independientes
   por grupo y servicio exponencial; las entradas son tasas por hora y tiempos
   medios, estimados del pico de `data/observados.json` (47 General/h y 24

@@ -9,7 +9,7 @@ const DIAS = new Map([
 const TRAMOS = new Map([
   ["hora_pico", "hora-pico"],
   ["jornada_completa", "jornada-completa"],
-  ["laboratorio", "laboratorio"],
+  ["simular_aleatoriamente", "simular-aleatoriamente"],
 ]);
 
 function citar(valor) {

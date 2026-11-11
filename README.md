@@ -43,7 +43,7 @@ con llegadas Poisson y servicio exponencial. La simulación aleatoria no compara
 sus resultados con la antigua referencia del simulador Python. En la hora pico
 con los tres días deben aparecer 71 pacientes, 7 que esperaron y Wq = 0,155 min.
 
-**Modo B, Laboratorio.** Permite definir tasas de llegada por grupo (Poisson),
+**Modo B, Simular aleatoriamente.** Permite definir tasas de llegada por grupo (Poisson),
 tiempos medios de atención por grupo (servicio exponencial), ventanillas y a
 quién atiende cada una, política de la cola, límite de pacientes o duración,
 criterio de desempeño, semilla y réplicas.
@@ -83,7 +83,7 @@ enlace muestra la versión nueva.
 
 - `src/engine/`: motor de eventos discretos, métricas, réplicas y Web Worker.
 - `src/escena/`: escena 3D con Three.js, personas y cámara.
-- `src/ui/`: interfaz, modo observados y laboratorio.
+- `src/ui/`: interfaz, datos observados y simulación aleatoria.
 - `data/observados.json`: datos y cifras de referencia exportados.
 - `vendor/three/`: Three.js r160 local (sin CDN).
 - `tests/`: pruebas con `node --test`.

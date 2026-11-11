@@ -76,7 +76,7 @@ const pasosRecorrido = [
       "La tabla compara los resultados con las cifras verificadas.",
   },
   {
-    titulo: "Modo B: laboratorio",
+    titulo: "Simular aleatoriamente",
     texto:
       "Ajusta ventanillas, llegadas y atención. Simula el escenario y ejecuta " +
       "réplicas para ver promedios e intervalos de confianza.",
@@ -902,16 +902,19 @@ try {
         },
       };
       comparacionParaCsv = resumen;
-      seleccionParaCsv = { dia: "Simulación", tramo: "laboratorio" };
+      seleccionParaCsv = {
+        dia: "Simulación",
+        tramo: "simular_aleatoriamente",
+      };
       datosParaCsv = {
         pacientes: corrida.pacientes.map((paciente) => ({
           id: paciente.id,
-          dia: "Laboratorio",
+          dia: "Simular aleatoriamente",
         })),
       };
       escenaLocal?.actualizarCalidad(metricas.n);
       controlReproduccion.cargar(
-        [{ eventos: corrida.eventos, dia: "Laboratorio" }],
+        [{ eventos: corrida.eventos, dia: "Simular aleatoriamente" }],
         resumen,
         actualizarResumenFinal,
       );
